@@ -84,20 +84,106 @@ const form = RuneForm.fromSchema(formSchema, {
 
 ---
 
-## API
+## Usage Examples
 
-### `RuneForm.fromSchema(schema, initialData?, options?)`
+### Deeply Nested Arrays
 
-- **schema**: Your Zod object schema
-- **initialData**: (optional) Partial initial values
-- **options**: (optional) { onSubmit, onError }
-- **Returns:** A `RuneForm` instance with full type safety and autocomplete for all nested fields.
+```ts
+import { z } from 'zod';
+import { RuneForm } from './src/lib/RuneForm.svelte.ts';
 
-### `form.getField(path)`
+const schema = z.object({
+  users: z.array(
+    z.object({
+      name: z.string(),
+      addresses: z.array(
+        z.object({
+          street: z.string(),
+          city: z.string(),
+          phones: z.array(z.string().min(10))
+        })
+      )
+    })
+  )
+});
 
-- **path**: Dot-notation string path (e.g., `'address.street'`, `'address.parkingLots.0.name'`)
-- **Returns:** Field object `{ value, error, errors, touched, constraints }`
-- **Autocomplete:** All valid paths from the schema are autocompleted in your editor.
+const form = RuneForm.fromSchema(schema, {
+  users: [
+    {
+      name: 'Alice',
+      addresses: [
+        { street: 'Main', city: 'NY', phones: ['1234567890'] }
+      ]
+    }
+  ]
+});
+
+// Access deeply nested field
+type Phone = typeof form.getField('users.0.addresses.0.phones.0');
+```
+
+### Async Validation
+
+```ts
+const schema = z.object({
+	email: z
+		.string()
+		.email()
+		.refine(
+			async (val) => {
+				// Simulate async uniqueness check
+				await new Promise((r) => setTimeout(r, 100));
+				return val !== 'taken@example.com';
+			},
+			{ message: 'Email already taken' }
+		)
+});
+
+const form = RuneForm.fromSchema(schema, { email: '' });
+
+await form.validate(); // Handles async refinements
+```
+
+### Custom Error Messages
+
+```ts
+const schema = z.object({
+	password: z.string().min(8, { message: 'Password too short' })
+});
+
+const form = RuneForm.fromSchema(schema, { password: '' });
+
+form.getFieldError('password'); // ['Password too short']
+```
+
+---
+
+## API Documentation
+
+### getAllPaths
+
+```ts
+getAllPaths(schema: ZodTypeAny, base?: string, depth?: number, maxDepth?: number): string[]
+```
+
+- Returns all valid dot-separated paths for a Zod schema, including nested arrays/objects.
+- Example: `['users.0.addresses.0.street']`
+
+### getZodInputConstraints
+
+```ts
+getZodInputConstraints(schema: ZodTypeAny): Record<string, unknown>
+```
+
+- Extracts HTML input constraints (e.g., `required`, `min`, `max`) from a Zod schema.
+
+### createZodValidator
+
+```ts
+createZodValidator<S extends ZodTypeAny>(schema: S): Validator<z.infer<S>>
+```
+
+- Returns a validator object with `parse`, `safeParse`, `safeParseAsync`, `resolveDefaults`, `getPaths`, and `getInputAttributes` methods for the given schema.
 
 ---
 

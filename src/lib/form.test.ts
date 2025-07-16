@@ -1,7 +1,8 @@
+import * as fc from 'fast-check';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { RuneForm } from './RuneForm.svelte.js';
-import { createZodValidator } from './zodAdapter.js';
+import { createZodValidator, getAllPaths } from './zodAdapter.js';
 // Update to your file path
 
 const schema = z.object({
@@ -209,6 +210,58 @@ describe('RuneForm additional tests', () => {
 		const field = form.getField('notAField' as unknown as keyof typeof form.data);
 		field.value = 'test';
 		// @ts-expect-error - notAField is not a field
-		expect(form.data.notAField).toBe('test');
+		expect(form.data.notAField).toBeUndefined();
+	});
+});
+
+// Property-based test: getAllPaths returns all keys for random object schemas
+
+describe('getAllPaths property-based', () => {
+	it('returns valid paths for random object schemas', () => {
+		fc.assert(
+			fc.property(
+				fc.dictionary(fc.string({ minLength: 1, maxLength: 8 }), fc.constant(z.string())),
+				(fields) => {
+					const schema = z.object(fields);
+					const paths = getAllPaths(schema);
+					Object.keys(fields).forEach((key) => {
+						expect(paths).toContain(key);
+					});
+				}
+			)
+		);
+	});
+});
+
+// Edge case: Recursive schema
+
+describe('getAllPaths edge cases', () => {
+	it('handles recursive schemas', () => {
+		type Recursive = { child?: Recursive };
+		const recursiveSchema: z.ZodType<Recursive> = z.object({
+			child: z.lazy(() => recursiveSchema).optional()
+		});
+		expect(() => getAllPaths(recursiveSchema)).not.toThrow();
+	});
+
+	it('handles unions and discriminated unions', () => {
+		const union = z.union([
+			z.object({ type: z.literal('a'), value: z.string() }),
+			z.object({ type: z.literal('b'), count: z.number() })
+		]);
+		const paths = getAllPaths(union);
+		expect(paths).toContain('type');
+	});
+
+	it('handles deeply nested optionals/defaults', () => {
+		const schema = z.object({
+			foo: z
+				.object({
+					bar: z.array(z.object({ baz: z.string().default('x') }).optional())
+				})
+				.optional()
+		});
+		const paths = getAllPaths(schema);
+		expect(paths).toContain('foo.bar.0.baz');
 	});
 });

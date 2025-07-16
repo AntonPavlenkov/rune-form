@@ -1,6 +1,2 @@
-// Reexport your entry components here
-import { RuneForm } from './RuneForm.svelte';
-import { createZodValidator } from './zodAdapter.js';
-export { getAllPaths } from './helper.js';
-
-export { createZodValidator, RuneForm };
+export { RuneForm } from './RuneForm.svelte';
+export { createZodValidator } from './zodAdapter.js';

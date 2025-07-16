@@ -1,4 +1,3 @@
-import type { ZodIssue, ZodTypeAny } from 'zod';
 import {
 	z,
 	ZodArray,
@@ -7,9 +6,56 @@ import {
 	ZodNumber,
 	ZodObject,
 	ZodOptional,
-	ZodString
+	ZodUnion,
+	type ZodTypeAny
 } from 'zod';
 import type { Validator } from './RuneForm.svelte.js';
+
+// --- Caching for performance ---
+const shapeCache = new WeakMap<ZodObject<Record<string, ZodTypeAny>>, Record<string, ZodTypeAny>>();
+const elementCache = new WeakMap<ZodArray<ZodTypeAny>, ZodTypeAny>();
+const unwrappedCache = new WeakMap<ZodTypeAny, ZodTypeAny>();
+const pathsCache = new WeakMap<ZodTypeAny, string[]>();
+
+function getShape(schema: ZodObject<Record<string, ZodTypeAny>>): Record<string, ZodTypeAny> {
+	if (!shapeCache.has(schema)) {
+		let shape: Record<string, ZodTypeAny> = {};
+		if (schema._def && typeof schema._def.shape === 'function') {
+			shape = (schema._def.shape as unknown as () => Record<string, ZodTypeAny>)();
+		} else if (schema._def && schema._def.shape) {
+			shape = schema._def.shape as Record<string, ZodTypeAny>;
+		}
+		shapeCache.set(schema, shape);
+	}
+	return shapeCache.get(schema)!;
+}
+
+function getElement(schema: ZodArray<ZodTypeAny>): ZodTypeAny {
+	if (!elementCache.has(schema)) {
+		let element: ZodTypeAny = z.unknown() as ZodTypeAny;
+		if (schema._def && schema._def.element) {
+			element = schema._def.element as ZodTypeAny;
+		}
+		elementCache.set(schema, element);
+	}
+	return elementCache.get(schema)!;
+}
+
+function unwrapSchema(schema: ZodTypeAny): ZodTypeAny {
+	if (unwrappedCache.has(schema)) return unwrappedCache.get(schema)!;
+	let s = schema;
+	while (
+		s.isOptional?.() ||
+		s.isNullable?.() ||
+		s instanceof ZodDefault ||
+		s instanceof ZodOptional ||
+		s instanceof ZodNullable
+	) {
+		s = (s as unknown as { def: { innerType: ZodTypeAny } }).def.innerType;
+	}
+	unwrappedCache.set(schema, s);
+	return s;
+}
 
 export function getZodInputConstraints(schema: ZodTypeAny): Record<string, unknown> {
 	const constraints: Record<string, unknown> = {};
@@ -17,8 +63,7 @@ export function getZodInputConstraints(schema: ZodTypeAny): Record<string, unkno
 	// -- Helper: unwrap inner schema
 	const unwrap = (s: ZodTypeAny): ZodTypeAny => {
 		while (s instanceof ZodOptional || s instanceof ZodDefault || s instanceof ZodNullable) {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			s = (s as any).def.innerType;
+			s = (s as unknown as { def: { innerType: ZodTypeAny } }).def.innerType;
 		}
 		return s;
 	};
@@ -34,48 +79,17 @@ export function getZodInputConstraints(schema: ZodTypeAny): Record<string, unkno
 	const base = unwrap(schema);
 
 	switch (true) {
-		case base instanceof ZodString: {
-			constraints.type = 'text';
-
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			for (const check of (base as any).def.checks ?? []) {
-				if (typeof check === 'object' && 'kind' in check) {
-					switch (check.kind) {
-						case 'min':
-							constraints.minlength = check.value;
-							break;
-						case 'max':
-							constraints.maxlength = check.value;
-							break;
-						case 'email':
-							constraints.type = 'email';
-							break;
-						case 'url':
-							constraints.type = 'url';
-							break;
-						case 'regex':
-							if ('regex' in check && check.regex instanceof RegExp) {
-								constraints.pattern = check.regex.source;
-							}
-							break;
-					}
-				}
-			}
-			break;
-		}
-
 		case base instanceof ZodNumber: {
 			constraints.type = 'number';
 
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			for (const check of (base as any).def.checks ?? []) {
-				if (typeof check === 'object' && 'kind' in check) {
+			for (const check of (base as unknown as { def: { checks: unknown[] } }).def.checks ?? []) {
+				if (check && typeof check === 'object' && 'kind' in check) {
 					switch (check.kind) {
 						case 'min':
-							constraints.min = check.value;
+							if ('value' in check) constraints.min = (check as { value: unknown }).value;
 							break;
 						case 'max':
-							constraints.max = check.value;
+							if ('value' in check) constraints.max = (check as { value: unknown }).value;
 							break;
 						case 'int':
 							constraints.step = 1;
@@ -97,9 +111,9 @@ export function getZodInputConstraints(schema: ZodTypeAny): Record<string, unkno
 	return constraints;
 }
 
-function flattenZodIssues(issues: ZodIssue[]): Record<string, string[]> {
+function flattenZodIssues(issues: unknown[]): Record<string, string[]> {
 	const errors: Record<string, string[]> = {};
-	for (const issue of issues) {
+	for (const issue of issues as { path: string[]; message: string }[]) {
 		const path = issue.path.join('.');
 		if (!errors[path]) errors[path] = [];
 		errors[path].push(issue.message);
@@ -107,28 +121,52 @@ function flattenZodIssues(issues: ZodIssue[]): Record<string, string[]> {
 	return errors;
 }
 
-export function getAllPaths(schema: ZodTypeAny, base = '', depth = 0): string[] {
+export function getAllPaths(schema: ZodTypeAny, base = '', depth = 0, maxDepth = 8): string[] {
+	schema = unwrapSchema(schema);
 	if (!schema || typeof schema !== 'object') return [];
-	if (depth > 5) return [];
+	if (depth > maxDepth) return [];
 
-	if (schema instanceof ZodDefault) {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		return getAllPaths((schema as any).def.innerType, base, depth);
+	// Handle ZodUnion
+	if (schema instanceof ZodUnion) {
+		const options = (schema as ZodUnion<[ZodTypeAny, ...ZodTypeAny[]]>)._def.options;
+		const all = options.flatMap((opt) => getAllPaths(opt, base, depth + 1, maxDepth));
+		return [...new Set(all)];
 	}
 
 	if (schema instanceof ZodObject) {
-		return Object.entries(schema.shape).flatMap(([key, sub]) =>
-			getAllPaths(sub as ZodTypeAny, base ? `${base}.${key}` : key, depth + 1)
+		const shape = getShape(schema);
+		const childPaths = Object.entries(shape).flatMap(([key, sub]) =>
+			getAllPaths(sub as ZodTypeAny, base ? `${base}.${key}` : key, depth + 1, maxDepth)
 		);
+		return base ? [base, ...childPaths] : childPaths;
 	}
 
 	if (schema instanceof ZodArray) {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const inner = getAllPaths((schema as any).def.type, `${base}.0`, depth + 1);
-		return [base, ...inner];
+		const arrayBase = base ? `${base}.0` : '0';
+		const element = getElement(schema as ZodArray<ZodTypeAny>);
+		const inner = getAllPaths(element as ZodTypeAny, arrayBase, depth + 1, maxDepth);
+		return base ? [base, ...inner] : inner;
 	}
 
-	return [base];
+	return base ? [base] : [];
+}
+
+// --- Precompute all valid paths for a schema (once) ---
+export function getPrecomputedPaths(schema: ZodTypeAny, maxDepth = 8): string[] {
+	if (pathsCache.has(schema)) return pathsCache.get(schema) || [];
+	const paths = getAllPaths(schema, '', 0, maxDepth);
+	pathsCache.set(schema, paths);
+	return paths;
+}
+
+// --- Batch validation helper ---
+export function batchValidate(schema: ZodTypeAny, data: unknown) {
+	return schema.safeParse(data);
+}
+
+// --- Metadata helper (from .describe()) ---
+export function getFieldDescription(schema: ZodTypeAny): string | undefined {
+	return (schema as unknown as { _def: { description: string } })._def?.description;
 }
 
 export function createZodValidator<S extends ZodTypeAny>(schema: S): Validator<z.infer<S>> {
@@ -156,22 +194,20 @@ export function createZodValidator<S extends ZodTypeAny>(schema: S): Validator<z
 		resolveDefaults(data: Partial<z.infer<S>>): z.infer<S> {
 			const walk = (schema: ZodTypeAny, value: unknown): unknown => {
 				if (schema instanceof ZodDefault) {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					return value !== undefined
-						? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-							walk((schema as any).def.innerType, value)
-						: // eslint-disable-next-line @typescript-eslint/no-explicit-any
-							typeof (schema as any).def.defaultValue === 'function'
-							? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-								(schema as any).def.defaultValue()
-							: // eslint-disable-next-line @typescript-eslint/no-explicit-any
-								(schema as any).def.defaultValue;
+						? walk((schema as unknown as { def: { innerType: ZodTypeAny } }).def.innerType, value)
+						: typeof (schema as unknown as { def: { defaultValue: unknown } }).def.defaultValue ===
+							  'function'
+							? (schema as unknown as { def: { defaultValue: () => unknown } }).def.defaultValue()
+							: (schema as unknown as { def: { defaultValue: unknown } }).def.defaultValue;
 				}
 
 				if (schema instanceof ZodObject) {
 					const result: Record<string, unknown> = {};
-					for (const key in schema.shape) {
-						const fieldSchema = schema.shape[key];
+					for (const key in (schema as unknown as { shape: Record<string, ZodTypeAny> }).shape) {
+						const fieldSchema = (schema as unknown as { shape: Record<string, ZodTypeAny> }).shape[
+							key
+						];
 						const val = (value as Record<string, unknown> | undefined)?.[key];
 						result[key] = walk(fieldSchema, val);
 					}
@@ -180,8 +216,9 @@ export function createZodValidator<S extends ZodTypeAny>(schema: S): Validator<z
 
 				if (schema instanceof ZodArray) {
 					if (Array.isArray(value)) {
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						return value.map((v) => walk((schema as any).def.type, v));
+						return value.map((v) =>
+							walk((schema as unknown as { def: { type: ZodTypeAny } }).def.type, v)
+						);
 					}
 					return [];
 				}
@@ -197,10 +234,9 @@ export function createZodValidator<S extends ZodTypeAny>(schema: S): Validator<z
 			let current: ZodTypeAny = schema;
 			for (const key of path.split('.')) {
 				if (current instanceof ZodObject) {
-					current = current.shape[key];
+					current = (current as unknown as { shape: Record<string, ZodTypeAny> }).shape[key];
 				} else if (current instanceof ZodArray && /^\d+$/.test(key)) {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-					current = (current as any).def.type;
+					current = (current as unknown as { def: { type: ZodTypeAny } }).def.type;
 				} else {
 					return {};
 				}

@@ -36,6 +36,28 @@
 	const cityField = form.getField('address.city');
 	const stateField = form.getField('address.state');
 	const zipField = form.getField('address.zip');
+	parkingLotsField.value = [
+		{
+			name: 'test',
+			lat: 1,
+			lng: 1
+		},
+		{
+			name: 'test',
+			lat: 1,
+			lng: 2
+		},
+		{
+			name: 'test',
+			lat: 1,
+			lng: 3
+		}
+	];
+	form.getField('address.parkingLots.2').value = {
+		name: 'test',
+		lat: 1,
+		lng: 1
+	};
 
 	function randomString(len = 8) {
 		return Math.random()
