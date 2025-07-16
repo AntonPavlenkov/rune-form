@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { RuneForm } from '$lib/RuneForm.svelte.js';
-	import { createZodValidator } from '$lib/zodAdapter.js';
+	import { RuneForm } from '$lib/RuneForm.svelte';
+	import { createZodValidator } from '$lib/zodAdapter';
 	import { z } from 'zod';
 
 	const formSchema = z.object({
@@ -25,14 +25,7 @@
 	const form = new RuneForm(createZodValidator(formSchema), {
 		name: 'John Doe',
 		email: 'test@test.com',
-		password: 'password',
-		address: {
-			street: '',
-			city: '',
-			state: '',
-			zip: '',
-			parkingLots: []
-		}
+		password: 'password'
 	});
 
 	function randomString(len = 8) {
