@@ -1,3 +1,22 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+.btn {
+	@apply rounded-md border border-gray-300 bg-white px-3 py-1 font-medium transition hover:bg-emerald-50;
+}
+.btn-primary {
+	@apply border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600;
+}
+.btn-success {
+	@apply border-emerald-300 bg-emerald-100 text-emerald-700 hover:bg-emerald-200;
+}
+.btn-error {
+	@apply border-red-300 bg-red-100 text-red-700 hover:bg-red-200;
+}
+.btn-outline {
+	@apply border-emerald-400 bg-white text-emerald-700 hover:bg-emerald-50;
+}
+.input-bordered {
+	@apply border border-gray-300 bg-white shadow-sm;
+}
