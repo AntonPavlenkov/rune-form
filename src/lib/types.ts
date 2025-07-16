@@ -2,11 +2,7 @@ import type { RuneForm } from './RuneForm.svelte.js';
 
 export type Primitive = string | number | boolean | null | undefined;
 
-type Join<K, P> = K extends string | number
-	? P extends string | number
-		? `${K}.${P}`
-		: never
-	: never;
+type Join<K extends string | number, P extends string | number> = `${K}.${P}`;
 
 type Prev = [never, 0, 1, 2, 3, 4, 5];
 
@@ -22,7 +18,7 @@ export type Paths<T, D extends number = 5> = [D] extends [never]
 	: T extends Primitive
 		? ''
 		: {
-				[K in Extract<keyof T, string>]: T[K] extends Array<any>
+				[K in Extract<keyof T, string>]: T[K] extends Array<unknown>
 					? K | Join<K, PathArray<T[K]>>
 					: T[K] extends object
 						? K | Join<K, Paths<T[K], Prev[D]>>
@@ -32,7 +28,7 @@ export type Paths<T, D extends number = 5> = [D] extends [never]
 export type PathValue<T, P extends string> = P extends `${infer K}.${infer Rest}`
 	? K extends keyof T
 		? T[K] extends Array<infer U>
-			? Rest extends `${infer Index}.${infer R}`
+			? Rest extends `${string}.${infer R}`
 				? PathValue<U, R>
 				: U
 			: T[K] extends object
@@ -47,6 +43,9 @@ export type PathValue<T, P extends string> = P extends `${infer K}.${infer Rest}
 				: never
 			: never;
 
-export type RuneFormType<T> = RuneForm<T>;
-export type RuneFormField<T> = Paths<T>;
-export type RuneFormFieldValue<T, K extends RuneFormField<T>> = PathValue<T, K>;
+export type RuneFormType<T extends Record<string, unknown>> = RuneForm<T>;
+export type RuneFormField<T extends Record<string, unknown>> = Paths<T>;
+export type RuneFormFieldValue<
+	T extends Record<string, unknown>,
+	K extends RuneFormField<T>
+> = PathValue<T, K>;

@@ -10,15 +10,15 @@ export interface Validator<T> {
 	): Promise<{ success: true; data: T } | { success: false; errors: Record<string, string[]> }>;
 	resolveDefaults?(data: Partial<T>): T;
 	getPaths?: () => string[];
-	getInputAttributes?: (path: string) => Record<string, any>;
+	getInputAttributes?: (path: string) => Record<string, unknown>;
 }
 
-export class RuneForm<T> {
+export class RuneForm<T extends Record<string, unknown>> {
 	id = Math.random();
 	data = $state<T>({} as T);
 	errors = $state<Record<string, string[]>>({});
-	customErrors = $state<Partial<Record<Paths<T> | string, string[]>>>({});
-	touched = $state({} as Record<Paths<T>, boolean>);
+	customErrors = $state<Partial<Record<string, string[]>>>({});
+	touched = $state<Record<Paths<T>, boolean>>({} as Record<Paths<T>, boolean>);
 
 	isValid = $state(false);
 	isSubmitting = $state(false);
@@ -26,9 +26,9 @@ export class RuneForm<T> {
 
 	private _compiledAccess = new Map<
 		string,
-		{ get: (obj: any) => any; set: (obj: any, value: any) => void }
+		{ get: (obj: T) => unknown; set: (obj: T, value: unknown) => void }
 	>();
-	private _fieldCache = new Map<string, any>();
+	private _fieldCache = new Map<string, unknown>();
 
 	constructor(
 		private validator: Validator<T>,
@@ -57,72 +57,95 @@ export class RuneForm<T> {
 		error: string;
 		errors: string[];
 		touched: boolean;
-		constraints: Record<string, any>;
+		constraints: Record<string, unknown>;
 	} {
-		if (this._fieldCache.has(path)) return this._fieldCache.get(path)!;
-		const self = this;
+		const cached = this._fieldCache.get(path);
+		if (cached)
+			return cached as {
+				value: PathValue<T, K>;
+				error: string;
+				errors: string[];
+				touched: boolean;
+				constraints: Record<string, unknown>;
+			};
 
+		// eslint-disable-next-line @typescript-eslint/no-this-alias
+		const self = this;
 		const field = {
-			get value() {
-				return self.getPath(self.data, path);
+			get value(): PathValue<T, K> {
+				return self.getPath(self.data, path) as PathValue<T, K>;
 			},
-			set value(val) {
+			set value(val: PathValue<T, K>) {
 				self.setPath(self.data, path, val);
 				self.markTouched(path);
 			},
-			get error() {
-				return (self.errors[path] ?? [])[0] ?? (self.customErrors[path] ?? [])[0] ?? '';
+			get error(): string {
+				return (
+					(self.errors[path as string] ?? [])[0] ??
+					(self.customErrors[path as string] ?? [])[0] ??
+					''
+				);
 			},
-			set error(val) {
-				self.customErrors[path] = [val];
+			set error(val: string) {
+				self.customErrors[path as string] = [val];
 			},
-			get errors() {
-				return [...(self.errors[path] ?? []), ...(self.customErrors[path] ?? [])];
+			get errors(): string[] {
+				return [
+					...(self.errors[path as string] ?? []),
+					...(self.customErrors[path as string] ?? [])
+				];
 			},
-			set errors(vals) {
-				self.customErrors[path] = vals;
+			set errors(vals: string[]) {
+				self.customErrors[path as string] = vals;
 			},
-			get touched() {
+			get touched(): boolean {
 				return self.touched[path] ?? false;
 			},
-			set touched(val) {
+			set touched(val: boolean) {
 				self.touched[path] = val;
 			},
-			get constraints() {
-				return self.validator.getInputAttributes?.(path) ?? {};
+			get constraints(): Record<string, unknown> {
+				return self.validator.getInputAttributes?.(path as string) ?? {};
 			}
 		};
 		this._fieldCache.set(path, field);
 		return field;
 	}
 
-	private getPath<K extends string>(obj: T, path: K): PathValue<T, K> {
+	private getPath<K extends string>(obj: T, path: K): unknown {
 		return (this._compiledAccess.get(path) ?? this.compilePath(path)).get(obj);
 	}
 
-	private setPath<K extends string>(obj: T, path: K, value: PathValue<T, K>) {
+	private setPath<K extends string>(obj: T, path: K, value: unknown): void {
 		(this._compiledAccess.get(path) ?? this.compilePath(path)).set(obj, value);
 	}
 
 	private compilePath(path: string) {
 		const keys = path.split('.');
 
-		const get = (obj: any) =>
-			keys.reduce((curr, key) => (curr && typeof curr === 'object' ? curr[key] : undefined), obj);
+		const get = (obj: T): unknown =>
+			keys.reduce(
+				(curr: unknown, key) =>
+					curr && typeof curr === 'object' ? (curr as Record<string, unknown>)[key] : undefined,
+				obj
+			);
 
-		const set = (obj: any, value: any) => {
-			let current = obj;
+		const set = (obj: T, value: unknown): void => {
+			let current: unknown = obj;
 			for (let i = 0; i < keys.length - 1; i++) {
 				const k = /^\d+$/.test(keys[i]) ? Number(keys[i]) : keys[i];
-				if (!(k in current) || typeof current[k] !== 'object') {
+				if (
+					!(k in (current as Record<string, unknown>)) ||
+					typeof (current as Record<string, unknown>)[k] !== 'object'
+				) {
 					const isNextIndex = /^\d+$/.test(keys[i + 1] ?? '');
-					current[k] = isNextIndex ? [] : {};
+					(current as Record<string, unknown>)[k] = isNextIndex ? [] : {};
 				}
-				current = current[k];
+				current = (current as Record<string, unknown>)[k];
 			}
 
 			const lastKey = /^\d+$/.test(keys.at(-1)!) ? Number(keys.at(-1)!) : keys.at(-1)!;
-			current[lastKey] = value;
+			(current as Record<string, unknown>)[lastKey] = value;
 		};
 
 		return { get, set };
@@ -148,7 +171,7 @@ export class RuneForm<T> {
 
 			this.errors = result.success ? {} : result.errors;
 			this.isValid = result.success;
-		} catch (e) {
+		} catch {
 			this.isValid = false;
 		} finally {
 			this.isValidating = false;
@@ -182,17 +205,17 @@ export class RuneForm<T> {
 	}
 
 	setCustomError(path: Paths<T> | (string & {}), message: string) {
-		this.customErrors[path] = [message];
+		this.customErrors[path as string] = [message];
 	}
 
 	setCustomErrors(path: Paths<T> | (string & {}), messages: string[]) {
-		this.customErrors[path] = messages;
+		this.customErrors[path as string] = messages;
 	}
 
 	push<K extends ArrayPaths<T>>(path: K, value: PathValue<T, `${K}.${number}`>) {
 		const arr = this.getPath(this.data, path);
 		if (Array.isArray(arr)) {
-			arr.push(value);
+			(arr as unknown[]).push(value);
 			this.markTouched(path);
 		}
 	}
@@ -200,7 +223,7 @@ export class RuneForm<T> {
 	insert<K extends ArrayPaths<T>>(path: K, index: number, value: PathValue<T, `${K}.${number}`>) {
 		const arr = this.getPath(this.data, path);
 		if (Array.isArray(arr)) {
-			arr.splice(index, 0, value);
+			(arr as unknown[]).splice(index, 0, value);
 			this.markTouched(path);
 		}
 	}
@@ -208,7 +231,7 @@ export class RuneForm<T> {
 	remove<K extends ArrayPaths<T>>(path: K, index: number) {
 		const arr = this.getPath(this.data, path);
 		if (Array.isArray(arr)) {
-			arr.splice(index, 1);
+			(arr as unknown[]).splice(index, 1);
 			this.markTouched(path);
 		}
 	}
@@ -265,5 +288,5 @@ export class RuneForm<T> {
 }
 
 type ArrayPaths<T> = {
-	[K in Paths<T>]: PathValue<T, K> extends Array<any> ? K : never;
+	[K in Paths<T>]: PathValue<T, K> extends Array<unknown> ? K : never;
 }[Paths<T>];
