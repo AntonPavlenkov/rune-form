@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { RuneForm } from '$lib/RuneForm.svelte';
-	import { createZodValidator } from '$lib/zodAdapter';
 	import { z } from 'zod';
 
 	const formSchema = z.object({
@@ -22,11 +21,21 @@
 		})
 	});
 
-	const form = new RuneForm(createZodValidator(formSchema), {
+	const form = RuneForm.fromSchema(formSchema, {
 		name: 'John Doe',
 		email: 'test@test.com',
 		password: 'password'
 	});
+
+	const nameField = form.getField('name');
+	const emailField = form.getField('email');
+	const passwordField = form.getField('password');
+	const addressField = form.getField('address');
+	const parkingLotsField = form.getField('address.parkingLots');
+	const streetField = form.getField('address.street');
+	const cityField = form.getField('address.city');
+	const stateField = form.getField('address.state');
+	const zipField = form.getField('address.zip');
 
 	function randomString(len = 8) {
 		return Math.random()
@@ -43,16 +52,6 @@
 	function getParkingLotTemplate() {
 		return { name: randomString(8), lat: randomNumber(), lng: randomNumber() };
 	}
-
-	const nameField = form.getField('name');
-	const emailField = form.getField('email');
-	const passwordField = form.getField('password');
-	const addressField = form.getField('address');
-	const parkingLotsField = form.getField('address.parkingLots');
-	const streetField = form.getField('address.street');
-	const cityField = form.getField('address.city');
-	const stateField = form.getField('address.state');
-	const zipField = form.getField('address.zip');
 </script>
 
 <form

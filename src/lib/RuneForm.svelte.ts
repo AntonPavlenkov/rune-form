@@ -1,4 +1,6 @@
+import type { z, ZodObject, ZodTypeAny } from 'zod';
 import type { Paths, PathValue } from './types.js';
+import { createZodValidator } from './zodAdapter.js';
 
 export interface Validator<T> {
 	parse(data: unknown): T;
@@ -29,6 +31,7 @@ export class RuneForm<T extends Record<string, unknown>> {
 		{ get: (obj: T) => unknown; set: (obj: T, value: unknown) => void }
 	>();
 	private _fieldCache = new Map<string, unknown>();
+	private _validPaths: Set<string>;
 
 	constructor(
 		private validator: Validator<T>,
@@ -45,28 +48,78 @@ export class RuneForm<T extends Record<string, unknown>> {
 			this._compiledAccess.set(path, this.compilePath(path));
 		}
 
+		// Precompute valid paths with array index normalization
+		this._validPaths = new Set(paths);
+
 		$effect(() => {
 			this.validateSchema();
 		});
+	}
+
+	static fromSchema<S extends ZodObject<Record<string, ZodTypeAny>>>(
+		schema: S,
+		initialData?: Partial<z.infer<S>>,
+		options?: {
+			onSubmit?: (data: z.infer<S>) => void | Promise<void>;
+			onError?: (errors: Record<string, string[]>) => void;
+		}
+	) {
+		return new RuneForm<z.infer<S>>(createZodValidator(schema), initialData, options);
+	}
+
+	private _normalizePath(path: string): string {
+		// Replace all numeric segments with 0 (for array indices)
+		return path
+			.split('.')
+			.map((seg) => (/^\d+$/.test(seg) ? '0' : seg))
+			.join('.');
+	}
+
+	private isArrayPath(path: string): boolean {
+		const value = this.getPath(this.data, path);
+		return Array.isArray(value);
+	}
+
+	array<K extends ArrayPaths<T>>(path: K) {
+		// Use import.meta.env.MODE for Vite/SvelteKit, fallback to always throw in dev
+		const isDev =
+			typeof import.meta !== 'undefined' &&
+			import.meta.env &&
+			import.meta.env.MODE !== 'production';
+		if (!this.isArrayPath(path as string)) {
+			if (isDev) {
+				throw new Error(`Path '${path}' is not an array field.`);
+			}
+		}
+		return {
+			push: (value: PathValue<T, `${K}.${number}`>) => this.push(path, value),
+			insert: (index: number, value: PathValue<T, `${K}.${number}`>) =>
+				this.insert(path, index, value),
+			remove: (index: number) => this.remove(path, index),
+			swap: (i: number, j: number) => this.swap(path, i, j),
+			replace: (value: PathValue<T, K>) => this.replace(path, value)
+		};
 	}
 
 	getField<K extends Paths<T>>(
 		path: K
 	): {
 		value: PathValue<T, K>;
-		error: string;
+		error: string | undefined;
 		errors: string[];
 		touched: boolean;
 		constraints: Record<string, unknown>;
+		isValidating: boolean;
 	} {
 		const cached = this._fieldCache.get(path);
 		if (cached)
 			return cached as {
 				value: PathValue<T, K>;
-				error: string;
+				error: string | undefined;
 				errors: string[];
 				touched: boolean;
 				constraints: Record<string, unknown>;
+				isValidating: boolean;
 			};
 
 		// eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -79,11 +132,11 @@ export class RuneForm<T extends Record<string, unknown>> {
 				self.setPath(self.data, path, val);
 				self.markTouched(path);
 			},
-			get error(): string {
+			get error(): string | undefined {
 				return (
-					(self.errors[path as string] ?? [])[0] ??
-					(self.customErrors[path as string] ?? [])[0] ??
-					''
+					((self.errors[path as string] ?? [])[0] ??
+						(self.customErrors[path as string] ?? [])[0]) ||
+					undefined
 				);
 			},
 			set error(val: string) {
@@ -106,18 +159,93 @@ export class RuneForm<T extends Record<string, unknown>> {
 			},
 			get constraints(): Record<string, unknown> {
 				return self.validator.getInputAttributes?.(path as string) ?? {};
+			},
+			get isValidating(): boolean {
+				return self.isValidating;
 			}
 		};
+
+		// Document in code: For array helpers, use form.array(path) instead of field.array
+		if (
+			this._validPaths.has(this._normalizePath(path as string)) &&
+			this.isArrayPath(path as string)
+		) {
+			// Object.assign(field, { array: this.array(path as ArrayPaths<T>) } as ArrayHelpers); // Removed dynamic array property
+		}
+
 		this._fieldCache.set(path, field);
 		return field;
 	}
 
 	private getPath<K extends string>(obj: T, path: K): unknown {
-		return (this._compiledAccess.get(path) ?? this.compilePath(path)).get(obj);
+		const keys = path.split('.');
+		let current: unknown = obj;
+		for (let i = 0; i < keys.length; i++) {
+			const key = keys[i];
+			if (current == null) {
+				// Auto-populate missing parent as object or array
+				const isArrayIndex = /^\d+$/.test(key);
+				current = isArrayIndex ? [] : {};
+				// Set on parent if possible
+				if (i > 0) {
+					const parent = this.getPath(obj, keys.slice(0, i).join('.'));
+					if (Array.isArray(parent)) {
+						(parent as unknown[])[Number(keys[i - 1])] = current;
+					} else if (parent && typeof parent === 'object') {
+						(parent as Record<string, unknown>)[keys[i - 1]] = current;
+					}
+				}
+			}
+			if (Array.isArray(current) && /^\d+$/.test(key)) {
+				current = (current as unknown[])[Number(key)];
+			} else if (current && typeof current === 'object') {
+				current = (current as Record<string, unknown>)[key];
+			} else {
+				current = undefined;
+			}
+		}
+		return current;
 	}
 
 	private setPath<K extends string>(obj: T, path: K, value: unknown): void {
-		(this._compiledAccess.get(path) ?? this.compilePath(path)).set(obj, value);
+		const keys = path.split('.');
+		let current: unknown = obj;
+		for (let i = 0; i < keys.length - 1; i++) {
+			const key = /^\d+$/.test(keys[i]) ? Number(keys[i]) : keys[i];
+			if (
+				!(typeof key === 'number'
+					? Array.isArray(current) && key in current
+					: typeof current === 'object' &&
+						current &&
+						key in (current as Record<string, unknown>)) ||
+				(typeof key === 'number'
+					? typeof (current as unknown[])[key] !== 'object'
+					: typeof (current as Record<string, unknown>)[key] !== 'object') ||
+				(typeof key === 'number'
+					? (current as unknown[])[key] === null
+					: (current as Record<string, unknown>)[key] === null)
+			) {
+				const isNextIndex = /^\d+$/.test(keys[i + 1] ?? '');
+				if (typeof key === 'number' && Array.isArray(current)) {
+					(current as unknown[])[key] = isNextIndex ? [] : {};
+				} else if (typeof current === 'object' && current) {
+					(current as Record<string, unknown>)[key as string] = isNextIndex ? [] : {};
+				}
+			}
+			if (typeof key === 'number' && Array.isArray(current)) {
+				current = (current as unknown[])[key];
+			} else if (typeof current === 'object' && current) {
+				current = (current as Record<string, unknown>)[key as string];
+			} else {
+				current = undefined;
+			}
+		}
+		const lastKey = /^\d+$/.test(keys.at(-1)!) ? Number(keys.at(-1)!) : keys.at(-1)!;
+		if (typeof lastKey === 'number' && Array.isArray(current)) {
+			(current as unknown[])[lastKey] = value;
+		} else if (typeof current === 'object' && current) {
+			(current as Record<string, unknown>)[lastKey as string] = value;
+		}
 	}
 
 	private compilePath(path: string) {
@@ -217,6 +345,7 @@ export class RuneForm<T extends Record<string, unknown>> {
 		if (Array.isArray(arr)) {
 			(arr as unknown[]).push(value);
 			this.markTouched(path);
+			this.clearFieldCache();
 		}
 	}
 
@@ -225,6 +354,7 @@ export class RuneForm<T extends Record<string, unknown>> {
 		if (Array.isArray(arr)) {
 			(arr as unknown[]).splice(index, 0, value);
 			this.markTouched(path);
+			this.clearFieldCache();
 		}
 	}
 
@@ -233,6 +363,7 @@ export class RuneForm<T extends Record<string, unknown>> {
 		if (Array.isArray(arr)) {
 			(arr as unknown[]).splice(index, 1);
 			this.markTouched(path);
+			this.clearFieldCache();
 		}
 	}
 
@@ -241,12 +372,14 @@ export class RuneForm<T extends Record<string, unknown>> {
 		if (Array.isArray(arr)) {
 			[arr[i], arr[j]] = [arr[j], arr[i]];
 			this.markTouched(path);
+			this.clearFieldCache();
 		}
 	}
 
 	replace<K extends ArrayPaths<T>>(path: K, value: PathValue<T, K>) {
 		this.setPath(this.data, path, value);
 		this.markTouched(path);
+		this.clearFieldCache();
 	}
 
 	private _enhance =
@@ -284,6 +417,10 @@ export class RuneForm<T extends Record<string, unknown>> {
 
 	get enhance() {
 		return this._enhance();
+	}
+
+	clearFieldCache() {
+		this._fieldCache.clear();
 	}
 }
 

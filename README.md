@@ -1,46 +1,33 @@
-# RuneForm
+# RuneForm: Svelte 5 + Zod Form Library
 
-A powerful, type-safe, deeply reactive form builder for Svelte 5 — built on runes and schema validation. Supports nested fields, arrays, async validation, and ergonomic field access for modern SvelteKit apps.
-
-[![npm version](https://img.shields.io/npm/v/rune-form.svg)](https://npmjs.com/package/rune-form)
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![GitHub](https://img.shields.io/badge/source-github-blue?logo=github)](https://github.com/AntonPavlenkov/rune-form)
+A professional, ergonomic, and type-safe Svelte 5 form library with Zod schema validation, supporting deeply nested objects and arrays. Built for modern SvelteKit and TypeScript workflows.
 
 ---
 
-## ✨ Features
+## Features
 
-- ⚡️ **Svelte 5 runes** (`$state`, `$effect`, etc.) for deep reactivity
-- ✅ **Type-safe** path access: `form.getField("user.email")`
-- 📦 **Zod**-powered schema validation (sync & async)
-- 🔁 **Nested objects & arrays** with full reactivity
-- 🔍 **Custom & schema validation errors** (array format)
-- 📤 **FormData** support for SvelteKit actions
-- 💬 **HTML input constraint generation** (type, min, etc.)
-- 🧠 **Async validation** tracking
-- 🎯 **SSR/SSG ready** and works with `use:enhance`
-- 🧪 **Fully tested**
+- **Type-safe**: Full TypeScript autocomplete for all nested field paths
+- **Schema-driven**: Zod schema is always the source of truth
+- **Deeply nested support**: Works with objects, arrays, and complex structures
+- **SSR/SSG ready**: Designed for SvelteKit
+- **Minimal boilerplate**: No need to manually type or infer types
 
 ---
 
-## 📦 Installation
+## Quick Start
+
+### 1. Install
 
 ```bash
-npm install rune-form zod
-# or
-pnpm add rune-form zod
+npm install zod
 ```
 
----
-
-## 🚀 Quick Start
-
-### 1. Define your Zod schema
+### 2. Define Your Zod Schema
 
 ```ts
 import { z } from 'zod';
 
-const formSchema = z.object({
+export const formSchema = z.object({
 	name: z.string().min(2).max(50),
 	email: z.string().email(),
 	password: z.string().min(8).max(50),
@@ -60,156 +47,83 @@ const formSchema = z.object({
 });
 ```
 
-### 2. Create a RuneForm instance
+### 3. Create a Form Instance (Recommended)
 
 ```ts
-import { RuneForm } from 'rune-form';
-import { createZodValidator } from 'rune-form/zodAdapter';
+import { RuneForm } from '$lib/RuneForm.svelte';
+import { formSchema } from './your-schema-file';
 
-const form = new RuneForm(createZodValidator(formSchema), {
+const form = RuneForm.fromSchema(formSchema, {
 	name: 'John Doe',
 	email: 'test@test.com',
 	password: 'password'
 });
 ```
 
-### 3. Use in your Svelte component
+- **No need to use `createZodValidator` or manually specify types.**
+- The schema is always the source of truth for all type inference and autocomplete.
+
+### 4. Use in Svelte Components
 
 ```svelte
 <script lang="ts">
-	// ...import and setup as above
+	import { RuneForm } from '$lib/RuneForm.svelte';
+	import { formSchema } from './your-schema-file';
+
+	const form = RuneForm.fromSchema(formSchema);
+	const nameField = form.getField('name');
+	const streetField = form.getField('address.street');
+	// ...
 </script>
 
-<form use:form.enhance>
-	<input type="text" bind:value={form.data.name} placeholder="Name" />
-	<input type="email" bind:value={form.data.email} placeholder="Email" />
-	<input type="password" bind:value={form.data.password} placeholder="Password" />
-
-	<!-- Nested fields -->
-	<input type="text" bind:value={form.data.address.street} placeholder="Street" />
-	<input type="text" bind:value={form.data.address.city} placeholder="City" />
-
-	<!-- Array fields -->
-	{#each form.data.address.parkingLots as lot, i}
-		<input type="text" bind:value={lot.name} placeholder="Parking Lot Name" />
-		<input type="number" bind:value={lot.lat} placeholder="Lat" />
-		<input type="number" bind:value={lot.lng} placeholder="Lng" />
-		<button type="button" on:click={() => form.remove('address.parkingLots', i)}>&times;</button>
-	{/each}
-	<button
-		type="button"
-		on:click={() => form.push('address.parkingLots', { name: '', lat: 0, lng: 0 })}
-	>
-		Add Parking Lot
-	</button>
-
-	<button type="submit">Submit</button>
-</form>
+<input bind:value={nameField.value} />
+{#if nameField.error}
+	<span class="error">{nameField.error}</span>
+{/if}
 ```
 
 ---
 
-## 🧩 API Overview
+## API
 
-### `RuneForm<T>`
+### `RuneForm.fromSchema(schema, initialData?, options?)`
 
-- **`form.data`** — Reactive form data, deeply bound to your schema.
-- **`form.errors`** — Reactive error object, keyed by field path.
-- **`form.getField(path)`** — Get a field object for advanced control (value, error, constraints, etc).
-- **`form.push(path, value)`** — Add an item to an array field.
-- **`form.remove(path, index)`** — Remove an item from an array field.
-- **`form.setCustomError(path, message)`** — Set a custom error for a field.
-- **`form.validateSchema()`** — Manually trigger validation.
-- **`form.enhance`** — Svelte action for progressive enhancement.
+- **schema**: Your Zod object schema
+- **initialData**: (optional) Partial initial values
+- **options**: (optional) { onSubmit, onError }
+- **Returns:** A `RuneForm` instance with full type safety and autocomplete for all nested fields.
 
-### Field Object
+### `form.getField(path)`
 
-```ts
-const field = form.getField('address.city');
-field.value; // get/set value
-field.error; // first error message
-field.errors; // all error messages
-field.touched; // touched state
-field.constraints; // HTML input constraints (type, min, etc.)
-```
+- **path**: Dot-notation string path (e.g., `'address.street'`, `'address.parkingLots.0.name'`)
+- **Returns:** Field object `{ value, error, errors, touched, constraints }`
+- **Autocomplete:** All valid paths from the schema are autocompleted in your editor.
 
 ---
 
-## 🛠️ Advanced Usage
+## Migration Notes
 
-- **Deeply nested fields:** Use dot notation with `form.getField('address.city')`.
-- **Custom validation:** Use Zod refinements or your own validator.
-- **Async validation:** Supported via Zod's async methods.
-- **SSR/SSG:** Works out of the box with SvelteKit.
-- **Type safety:** All data and errors are fully typed from your schema.
-
----
-
-## 🧪 Example: Full Svelte 5 Usage
-
-```svelte
-<script lang="ts">
-	import { RuneForm } from 'rune-form';
-	import { createZodValidator } from 'rune-form/zodAdapter';
-	import { z } from 'zod';
-
-	const formSchema = z.object({
-		name: z.string().min(2).max(50),
-		email: z.string().email(),
-		password: z.string().min(8).max(50),
-		address: z.object({
-			street: z.string().min(2).max(50),
-			city: z.string().min(2).max(50),
-			state: z.string().min(2).max(50),
-			zip: z.string().min(2).max(50),
-			parkingLots: z.array(
-				z.object({
-					name: z.string().min(5).max(50),
-					lat: z.number(),
-					lng: z.number()
-				})
-			)
-		})
-	});
-
-	const form = new RuneForm(createZodValidator(formSchema), {});
-</script>
-
-<form use:form.enhance>
-	<input type="text" bind:value={form.data.name} placeholder="Name" />
-	<input type="email" bind:value={form.data.email} placeholder="Email" />
-	<input type="password" bind:value={form.data.password} placeholder="Password" />
-
-	<input type="text" bind:value={form.data.address.street} placeholder="Street" />
-	<input type="text" bind:value={form.data.address.city} placeholder="City" />
-
-	{#each form.data.address.parkingLots as lot, i}
-		<input type="text" bind:value={lot.name} placeholder="Parking Lot Name" />
-		<input type="number" bind:value={lot.lat} placeholder="Lat" />
-		<input type="number" bind:value={lot.lng} placeholder="Lng" />
-		<button type="button" on:click={() => form.remove('address.parkingLots', i)}>&times;</button>
-	{/each}
-	<button
-		type="button"
-		on:click={() => form.push('address.parkingLots', { name: '', lat: 0, lng: 0 })}
-	>
-		Add Parking Lot
-	</button>
-
-	<button type="submit">Submit</button>
-</form>
-```
+- **Old usage:**
+  ```ts
+  // ❌ No longer recommended
+  const form = new RuneForm(createZodValidator(schema), { ... });
+  ```
+- **New usage:**
+  ```ts
+  // ✅ Recommended
+  const form = RuneForm.fromSchema(schema, { ... });
+  ```
 
 ---
 
-## 📚 More
+## Best Practices
 
-- [API Reference](https://github.com/AntonPavlenkov/rune-form#api)
-- [Live Playground & Docs](https://github.com/AntonPavlenkov/rune-form)
-- [Zod Documentation](https://zod.dev/)
+- Always use `RuneForm.fromSchema` for form creation.
+- The Zod schema is the single source of truth for all type inference and validation.
+- You get full TypeScript autocomplete for all nested fields—no manual typing needed.
 
 ---
 
-## 📝 License
+## License
 
-MIT © [Anton Pavlenkov](https://github.com/AntonPavlenkov)
+MIT

@@ -6,7 +6,7 @@ import { createZodValidator } from './zodAdapter.js';
 
 const schema = z.object({
 	name: z.string().min(2),
-	email: z.string().email(),
+	email: z.email(),
 	password: z.string().min(8),
 	address: z.object({
 		street: z.string(),
@@ -25,8 +25,10 @@ const schema = z.object({
 	})
 });
 
-describe('FormKit', () => {
-	type FormKitFromSchema<S extends z.ZodTypeAny> = RuneForm<z.infer<S>>;
+describe('RuneForm', () => {
+	type FormKitFromSchema<S extends z.ZodObject<Record<string, z.ZodTypeAny>>> = RuneForm<
+		z.infer<S>
+	>;
 	type MyForm = FormKitFromSchema<typeof schema>;
 
 	let form: MyForm;
@@ -132,5 +134,81 @@ describe('FormKit', () => {
 		expect(form.getField('name').touched).toBeFalsy();
 		expect(form.getField('email').touched).toBeFalsy();
 		expect(form.getField('address.city').touched).toBeFalsy();
+	});
+});
+
+describe('RuneForm additional tests', () => {
+	const schema = z.object({
+		name: z.string().min(2),
+		email: z.email(),
+		password: z.string().min(8),
+		address: z.object({
+			street: z.string(),
+			city: z.string(),
+			state: z.string(),
+			zip: z.string(),
+			parkingLots: z
+				.array(
+					z.object({
+						name: z.string(),
+						lat: z.number(),
+						lng: z.number()
+					})
+				)
+				.default([])
+		})
+	});
+	type MyForm = RuneForm<z.infer<typeof schema>>;
+	let form: MyForm;
+
+	beforeEach(() => {
+		form = new RuneForm(createZodValidator(schema));
+	});
+
+	it('should add and remove array items', () => {
+		// Add item
+		const lotsField = form.getField('address.parkingLots');
+		lotsField.value = [
+			{ name: 'Lot 1', lat: 1, lng: 2 },
+			{ name: 'Lot 2', lat: 3, lng: 4 }
+		];
+		expect(form.data.address.parkingLots.length).toBe(2);
+		// Remove item
+		lotsField.value = [form.data.address.parkingLots[0]];
+		expect(form.data.address.parkingLots.length).toBe(1);
+	});
+
+	it('should validate array items', async () => {
+		const lotsField = form.getField('address.parkingLots');
+		lotsField.value = [{ name: '', lat: 1, lng: 2 }];
+		await form.validateSchema();
+		expect(form.data.address.parkingLots[0].lat).toBe(1);
+	});
+
+	it('should reset nested arrays', () => {
+		const lotsField = form.getField('address.parkingLots');
+		lotsField.value = [{ name: 'Lot 1', lat: 1, lng: 2 }];
+		form.reset();
+		expect(form.data.address.parkingLots).toEqual([]);
+	});
+
+	it('should update deeply nested fields', () => {
+		form.getField('address.parkingLots').value = [{ name: 'Lot 1', lat: 1, lng: 2 }];
+		form.getField('address.parkingLots.0.name').value = 'Lot X';
+		expect(form.data.address.parkingLots[0].name).toBe('Lot X');
+	});
+
+	it('should clear errors after fixing fields', async () => {
+		await form.validateSchema();
+		form.getField('name').value = 'Valid';
+		await form.validateSchema();
+		expect(form.getField('name').error).toBeUndefined();
+	});
+
+	it('should return undefined for non-existent fields', () => {
+		const field = form.getField('notAField' as unknown as keyof typeof form.data);
+		field.value = 'test';
+		// @ts-expect-error - notAField is not a field
+		expect(form.data.notAField).toBe('test');
 	});
 });

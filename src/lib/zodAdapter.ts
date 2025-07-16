@@ -1,3 +1,4 @@
+import type { ZodIssue, ZodTypeAny } from 'zod';
 import {
 	z,
 	ZodArray,
@@ -6,9 +7,7 @@ import {
 	ZodNumber,
 	ZodObject,
 	ZodOptional,
-	ZodString,
-	type ZodIssue,
-	type ZodTypeAny
+	ZodString
 } from 'zod';
 import type { Validator } from './RuneForm.svelte.js';
 
