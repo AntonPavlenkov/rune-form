@@ -74,6 +74,8 @@
 	function getParkingLotTemplate() {
 		return { name: randomString(8), lat: randomNumber(), lng: randomNumber() };
 	}
+
+	$inspect(form.touched);
 </script>
 
 <form
@@ -87,7 +89,7 @@
 			<div class="flex items-center gap-2">
 				<input
 					type="text"
-					bind:value={form.data.name}
+					bind:value={nameField.value}
 					placeholder="Name"
 					class="input input-bordered w-full"
 				/>
@@ -278,4 +280,9 @@
 >
 	<h3 class="mb-2 text-lg font-semibold text-emerald-700">Live Form Data</h3>
 	<pre class="text-xs text-gray-700">{JSON.stringify(form.data, null, 2)}</pre>
+</div>
+
+<div class="mx-auto mt-8 max-w-2xl rounded-xl border border-blue-100 bg-blue-50/60 p-6 shadow">
+	<h3 class="mb-2 text-lg font-semibold text-blue-700">Touched Fields</h3>
+	<pre class="text-xs text-gray-700">{JSON.stringify(form.touched, null, 2)}</pre>
 </div>

@@ -194,12 +194,24 @@ export function createZodValidator<S extends ZodTypeAny>(schema: S): Validator<z
 		resolveDefaults(data: Partial<z.infer<S>>): z.infer<S> {
 			const walk = (schema: ZodTypeAny, value: unknown): unknown => {
 				if (schema instanceof ZodDefault) {
-					return value !== undefined
-						? walk((schema as unknown as { def: { innerType: ZodTypeAny } }).def.innerType, value)
-						: typeof (schema as unknown as { def: { defaultValue: unknown } }).def.defaultValue ===
-							  'function'
-							? (schema as unknown as { def: { defaultValue: () => unknown } }).def.defaultValue()
-							: (schema as unknown as { def: { defaultValue: unknown } }).def.defaultValue;
+					const innerType = (schema as unknown as { def: { innerType: ZodTypeAny } }).def.innerType;
+					const defaultValue = (schema as unknown as { def: { defaultValue: unknown } }).def
+						.defaultValue;
+
+					if (value !== undefined) {
+						return walk(innerType, value);
+					}
+
+					// Handle function defaults
+					if (typeof defaultValue === 'function') {
+						const defaultResult = (
+							schema as unknown as { def: { defaultValue: () => unknown } }
+						).def.defaultValue();
+						return walk(innerType, defaultResult);
+					}
+
+					// Handle static defaults
+					return walk(innerType, defaultValue);
 				}
 
 				if (schema instanceof ZodObject) {
