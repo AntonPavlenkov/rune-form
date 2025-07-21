@@ -58,6 +58,10 @@ export class RuneForm<T extends Record<string, unknown>> {
 	// Track pending validation for array operations
 	private _pendingArrayValidation = new SvelteSet<string>();
 
+	// Pre-compiled regex patterns for array path operations
+	private static readonly _ARRAY_INDEX_PATTERN = /^(\d+)\./;
+	private static readonly _ARRAY_FULL_PATTERN = /^(\d+)\.(.*)/;
+
 	constructor(
 		private validator: Validator<T>,
 		private initialData: Partial<T> = {}
@@ -82,9 +86,7 @@ export class RuneForm<T extends Record<string, unknown>> {
 			this._data && this.touched;
 
 			// Clear existing timeout
-			if (validationTimeout) {
-				clearTimeout(validationTimeout);
-			}
+			clearTimeout(validationTimeout);
 
 			// Debounce validation to avoid excessive calls during rapid updates
 			validationTimeout = setTimeout(() => {
@@ -131,9 +133,7 @@ export class RuneForm<T extends Record<string, unknown>> {
 
 				// Only mark as touched if this is not an internal update and the value actually changed
 				if (!this._isInternalUpdate && oldValue !== value) {
-					this.markTouched(currentPath as unknown as Paths<T>);
-					// Trigger validation immediately for all changes to ensure reactivity
-					this.validateSchema();
+					this._handleFieldChange(currentPath as unknown as Paths<T>);
 				}
 
 				return true;
@@ -189,6 +189,9 @@ export class RuneForm<T extends Record<string, unknown>> {
 								if (!this._isInternalUpdate) {
 									this.markTouched(parentPath as unknown as Paths<T>);
 									this._debouncedArrayValidation(parentPath);
+
+									// Handle array method specific touched state syncing
+									this._handleArrayMethodTouchedState(prop, args, target, parentPath);
 								}
 
 								return result;
@@ -208,22 +211,14 @@ export class RuneForm<T extends Record<string, unknown>> {
 					return true;
 				}
 
-				// Check if property is writable
-				const descriptor = Object.getOwnPropertyDescriptor(target, prop);
-				if (descriptor && !descriptor.writable && !descriptor.set) {
-					return true;
-				}
-
 				const oldValue = target[prop as keyof typeof target];
 				const currentPath = pathPrefix + String(prop);
-				// @ts-expect-error - we know this is writable
+				// @ts-expect-error - Array properties are writable in practice
 				target[prop as keyof typeof target] = value;
 
 				// Only mark as touched if this is not an internal update and the value actually changed
 				if (!this._isInternalUpdate && oldValue !== value) {
-					this.markTouched(currentPath as unknown as Paths<T>);
-					// Trigger validation immediately for all changes to ensure reactivity
-					this.validateSchema();
+					this._handleFieldChange(currentPath as unknown as Paths<T>);
 				}
 
 				return true;
@@ -431,10 +426,17 @@ export class RuneForm<T extends Record<string, unknown>> {
 			// Use the Proxy's setter to ensure reactivity
 			cached.set(this._data, newArray);
 			this.markTouched(path);
-			// Only clear cache if field cache has entries to avoid unnecessary work
-			if (this._fieldCache.size > 0) {
-				this._fieldCache.clear();
+			// Clear field cache to ensure fresh field objects
+			this._fieldCache.clear();
+
+			// Recreate reactive proxies for the new array to ensure proper tracking
+			this._isInternalUpdate = true;
+			const updatedArray = cached.get(this._data);
+			if (Array.isArray(updatedArray)) {
+				const reactiveArray = this.createReactiveArray(updatedArray, path as string);
+				cached.set(this._data, reactiveArray);
 			}
+			this._isInternalUpdate = false;
 		}
 	}
 
@@ -471,6 +473,9 @@ export class RuneForm<T extends Record<string, unknown>> {
 		this._executeArrayOperation(path, (arr) => {
 			// Swap the array elements
 			[arr[i], arr[j]] = [arr[j], arr[i]];
+
+			// Sync touched state for swapped items
+			this._syncTouchedStateForArraySwap(path as string, i, j);
 		});
 	}
 
@@ -482,10 +487,21 @@ export class RuneForm<T extends Record<string, unknown>> {
 		...items: PathValue<T, `${K}.${number}`>[]
 	) {
 		this._executeArrayOperation(path, (arr) => {
+			const actualDeleteCount = deleteCount ?? arr.length - start;
+			const insertCount = items.length;
+
 			if (deleteCount !== undefined) {
 				arr.splice(start, deleteCount, ...items);
 			} else {
 				arr.splice(start);
+			}
+
+			// Sync touched state for array operations
+			if (actualDeleteCount > 0) {
+				this._syncTouchedStateForArrayRemoval(path as string, start, actualDeleteCount);
+			}
+			if (insertCount > 0) {
+				this._syncTouchedStateForArrayInsertion(path as string, start, insertCount);
 			}
 		});
 	}
@@ -502,7 +518,6 @@ export class RuneForm<T extends Record<string, unknown>> {
 				e.preventDefault();
 
 				await this.validateSchema();
-				console.log('SUBMIT DATA', this._data);
 				if (this._errorCount === 0) {
 					await options.onSubmit?.(this._data);
 				} else {
@@ -576,6 +591,198 @@ export class RuneForm<T extends Record<string, unknown>> {
 				return self.isValidating;
 			}
 		};
+	}
+
+	// Helper methods for syncing touched state during array operations
+	private _syncTouchedStateForArraySwap(arrayPath: string, i: number, j: number) {
+		// Get all touched keys for the array
+		const touchedKeys = Object.keys(this.touched).filter(
+			(key) => key.startsWith(`${arrayPath}.${i}.`) || key.startsWith(`${arrayPath}.${j}.`)
+		);
+
+		// Create a temporary map to store the touched states
+		const tempTouched = new SvelteMap<string, boolean>();
+
+		// Store current touched states
+		for (const key of touchedKeys) {
+			tempTouched.set(key, this.touched[key]);
+		}
+
+		// First, delete all existing keys to avoid conflicts
+		for (const key of touchedKeys) {
+			delete this.touched[key];
+		}
+
+		// Then create the new swapped keys
+		for (const key of touchedKeys) {
+			if (key.startsWith(`${arrayPath}.${i}.`)) {
+				const newKey = key.replace(`${arrayPath}.${i}.`, `${arrayPath}.${j}.`);
+				this.touched[newKey] = tempTouched.get(key) ?? false;
+			} else if (key.startsWith(`${arrayPath}.${j}.`)) {
+				const newKey = key.replace(`${arrayPath}.${j}.`, `${arrayPath}.${i}.`);
+				this.touched[newKey] = tempTouched.get(key) ?? false;
+			}
+		}
+	}
+
+	private _syncTouchedStateForArrayRemoval(
+		arrayPath: string,
+		startIndex: number,
+		deleteCount: number
+	) {
+		// Get all touched keys for the array
+		const touchedKeys = this._getTouchedKeysForArray(arrayPath);
+
+		// Remove touched state for deleted items
+		for (let i = 0; i < deleteCount; i++) {
+			const indexToRemove = startIndex + i;
+			const prefix = `${arrayPath}.${indexToRemove}.`;
+			const keysToRemove = touchedKeys.filter((key) => key.startsWith(prefix));
+
+			for (const key of keysToRemove) {
+				delete this.touched[key];
+			}
+		}
+
+		// Shift remaining indices down
+		this._shiftArrayIndices(touchedKeys, arrayPath, startIndex + deleteCount, -deleteCount);
+	}
+
+	private _syncTouchedStateForArrayInsertion(
+		arrayPath: string,
+		startIndex: number,
+		insertCount: number
+	) {
+		// Get all touched keys for the array
+		const touchedKeys = this._getTouchedKeysForArray(arrayPath);
+
+		// Shift existing indices up to make room for new items
+		this._shiftArrayIndices(touchedKeys, arrayPath, startIndex, insertCount);
+	}
+
+	// Helper method to ensure array elements remain reactive after splice
+	private _ensureArrayElementsReactive(arrayPath: string, array: unknown[]) {
+		// Check each array element and ensure it's reactive
+		for (let i = 0; i < array.length; i++) {
+			const element = array[i];
+			if (element && typeof element === 'object' && !Array.isArray(element)) {
+				const elementPath = `${arrayPath}.${i}`;
+				// Always create a reactive proxy for the element to ensure reactivity
+				const reactiveElement = this.createReactiveData(element as T, elementPath);
+				// Replace the element in the array
+				array[i] = reactiveElement;
+			} else if (Array.isArray(element)) {
+				const elementPath = `${arrayPath}.${i}`;
+				// Always create a reactive array for the nested array to ensure reactivity
+				const reactiveArray = this.createReactiveArray(element, elementPath);
+				// Replace the element in the array
+				array[i] = reactiveArray;
+			}
+		}
+	}
+
+	// Helper method to get all touched keys for a specific array
+	private _getTouchedKeysForArray(arrayPath: string): string[] {
+		return Object.keys(this.touched).filter((key) => key.startsWith(`${arrayPath}.`));
+	}
+
+	// Helper method to shift array indices in touched state
+	private _shiftArrayIndices(
+		touchedKeys: string[],
+		arrayPath: string,
+		startIndex: number,
+		shiftAmount: number
+	) {
+		const indexPattern = new RegExp(`^${arrayPath}\\.(\\d+)\\.`);
+		const fullPattern = new RegExp(`^${arrayPath}\\.(\\d+)\\.(.*)`);
+
+		// Filter keys that need to be shifted
+		const keysToShift = touchedKeys.filter((key) => {
+			const match = key.match(indexPattern);
+			if (!match) return false;
+			const index = parseInt(match[1], 10);
+			return index >= startIndex;
+		});
+
+		// Sort by index in descending order to avoid conflicts (for insertion)
+		if (shiftAmount > 0) {
+			keysToShift.sort((a, b) => {
+				const matchA = a.match(indexPattern);
+				const matchB = b.match(indexPattern);
+				if (!matchA || !matchB) return 0;
+				return parseInt(matchB[1], 10) - parseInt(matchA[1], 10);
+			});
+		}
+
+		// Shift the keys
+		for (const key of keysToShift) {
+			const match = key.match(fullPattern);
+			if (match) {
+				const oldIndex = parseInt(match[1], 10);
+				const restOfPath = match[2];
+				const newIndex = oldIndex + shiftAmount;
+				const newKey = `${arrayPath}.${newIndex}.${restOfPath}`;
+
+				this.touched[newKey] = this.touched[key];
+				delete this.touched[key];
+			}
+		}
+	}
+
+	// Helper method to handle array method specific touched state syncing
+	private _handleArrayMethodTouchedState(
+		methodName: string,
+		args: unknown[],
+		target: unknown[],
+		parentPath: string
+	) {
+		switch (methodName) {
+			case 'splice': {
+				const [start, deleteCount = 0, ...insertItems] = args as [number, number?, ...unknown[]];
+				const actualDeleteCount = deleteCount ?? target.length - start;
+				const insertCount = insertItems.length;
+
+				if (actualDeleteCount > 0) {
+					this._syncTouchedStateForArrayRemoval(parentPath, start, actualDeleteCount);
+				}
+				if (insertCount > 0) {
+					this._syncTouchedStateForArrayInsertion(parentPath, start, insertCount);
+				}
+
+				// Ensure remaining array elements are reactive after splice
+				this._ensureArrayElementsReactive(parentPath, target);
+				break;
+			}
+			case 'pop': {
+				// Remove touched state for the last item
+				const lastIndex = target.length - 1;
+				if (lastIndex >= 0) {
+					this._syncTouchedStateForArrayRemoval(parentPath, lastIndex, 1);
+				}
+				break;
+			}
+			case 'shift': {
+				// Remove touched state for the first item and shift others down
+				this._syncTouchedStateForArrayRemoval(parentPath, 0, 1);
+				break;
+			}
+			case 'unshift': {
+				// Shift existing items up to make room for new items
+				const insertCount = args.length;
+				this._syncTouchedStateForArrayInsertion(parentPath, 0, insertCount);
+				break;
+			}
+			case 'push':
+				// No need to sync touched state for push - new items aren't touched
+				break;
+		}
+	}
+
+	// Helper method to handle field changes consistently
+	private _handleFieldChange(path: Paths<T>) {
+		this.markTouched(path);
+		// Trigger validation immediately for all changes to ensure reactivity
+		this.validateSchema();
 	}
 }
 

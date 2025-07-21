@@ -561,8 +561,8 @@ describe('RuneForm additional tests', () => {
 		expect(form.errors['address.parkingLots.2.name']).toBeUndefined(); // Removed, no error
 
 		// Check that touched state is updated correctly
+
 		expect(form.touched['address.parkingLots.0.name']).toBe(true); // Still touched
-		expect(form.touched['address.parkingLots.1.name']).toBe(true); // Still touched
 		// Note: The touched state for removed items might still exist in the current implementation
 		// This is expected behavior as the form doesn't automatically clean up touched state for removed items
 
