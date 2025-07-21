@@ -3,6 +3,13 @@ import type { z, ZodObject, ZodTypeAny } from 'zod';
 import type { Paths, PathValue } from './types.js';
 import { createZodValidator } from './zodAdapter.js';
 
+// TypeScript declaration for Symbol.dispose (available in TypeScript 5.2+)
+declare global {
+	interface SymbolConstructor {
+		readonly dispose: unique symbol;
+	}
+}
+
 export interface Validator<T> {
 	parse(data: unknown): T;
 	safeParse(
@@ -57,6 +64,10 @@ export class RuneForm<T extends Record<string, unknown>> {
 	]);
 	// Track pending validation for array operations
 	private _pendingArrayValidation = new SvelteSet<string>();
+
+	// Cache size limits to prevent memory leaks
+	private static readonly _MAX_PATH_CACHE_SIZE = 1000;
+	private static readonly _MAX_FIELD_CACHE_SIZE = 500;
 
 	// Pre-compiled regex patterns for array path operations
 	private static readonly _ARRAY_INDEX_PATTERN = /^(\d+)\./;
@@ -290,6 +301,16 @@ export class RuneForm<T extends Record<string, unknown>> {
 		}
 
 		const field = this._createFieldObject(path, compiled);
+
+		// Limit field cache size to prevent memory leaks
+		if (this._fieldCache.size >= RuneForm._MAX_FIELD_CACHE_SIZE) {
+			// Clear oldest entries (simple FIFO approach)
+			const firstKey = this._fieldCache.keys().next().value;
+			if (firstKey) {
+				this._fieldCache.delete(firstKey);
+			}
+		}
+
 		this._fieldCache.set(path, field);
 		return field;
 	}
@@ -299,6 +320,15 @@ export class RuneForm<T extends Record<string, unknown>> {
 		const existing = this._pathCache.get(path);
 		if (existing) {
 			return existing;
+		}
+
+		// Limit cache size to prevent memory leaks
+		if (this._pathCache.size >= RuneForm._MAX_PATH_CACHE_SIZE) {
+			// Clear oldest entries (simple FIFO approach)
+			const firstKey = this._pathCache.keys().next().value;
+			if (firstKey) {
+				this._pathCache.delete(firstKey);
+			}
 		}
 
 		// Parse and cache the path - optimize by doing it once
@@ -391,6 +421,13 @@ export class RuneForm<T extends Record<string, unknown>> {
 				this.validateSchema();
 			}
 		});
+
+		// Safety cleanup: remove stale entries after a timeout
+		setTimeout(() => {
+			if (this._pendingArrayValidation.has(path)) {
+				this._pendingArrayValidation.delete(path);
+			}
+		}, 5000) as unknown as number; // 5 second timeout
 	}
 
 	markTouched(path: Paths<T>) {
@@ -426,8 +463,9 @@ export class RuneForm<T extends Record<string, unknown>> {
 			// Use the Proxy's setter to ensure reactivity
 			cached.set(this._data, newArray);
 			this.markTouched(path);
-			// Clear field cache to ensure fresh field objects
-			this._fieldCache.clear();
+
+			// Clear stale field cache entries related to this array path
+			this._clearStaleFieldCacheEntries(path as string);
 
 			// Recreate reactive proxies for the new array to ensure proper tracking
 			this._isInternalUpdate = true;
@@ -783,6 +821,59 @@ export class RuneForm<T extends Record<string, unknown>> {
 		this.markTouched(path);
 		// Trigger validation immediately for all changes to ensure reactivity
 		this.validateSchema();
+	}
+
+	// Helper method to clear stale field cache entries for array operations
+	private _clearStaleFieldCacheEntries(arrayPath: string) {
+		const keysToRemove: string[] = [];
+
+		// Find all field cache entries that start with the array path
+		for (const key of this._fieldCache.keys()) {
+			if (key.startsWith(arrayPath)) {
+				keysToRemove.push(key);
+			}
+		}
+
+		// Remove the stale entries
+		for (const key of keysToRemove) {
+			this._fieldCache.delete(key);
+		}
+	}
+
+	/**
+	 * Cleanup method for Svelte's automatic resource disposal.
+	 * This method is called when the form instance goes out of scope.
+	 */
+	[Symbol.dispose]() {
+		this.dispose();
+	}
+
+	/**
+	 * Manual cleanup method to free resources and prevent memory leaks.
+	 * Call this when you're done with the form instance.
+	 */
+	dispose() {
+		// Clear all caches to free memory
+		this._pathCache.clear();
+		this._fieldCache.clear();
+		this._pendingArrayValidation.clear();
+
+		// Clear WeakMaps (they will be garbage collected automatically)
+		this._proxyCache = new WeakMap<object, object>();
+		this._methodCache = new WeakMap<object, SvelteMap<string, (...args: unknown[]) => unknown>>();
+
+		// Reset reactive state to prevent memory leaks
+		this._data = {} as T;
+		this.errors = {};
+		this.customErrors = {};
+		this.touched = {};
+		this.isValid = false;
+		this.isValidating = false;
+		this._errorCount = 0;
+		this._isInternalUpdate = false;
+
+		// Clear the valid paths set
+		this._validPaths.clear();
 	}
 }
 
