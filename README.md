@@ -1,23 +1,27 @@
 # RuneForm
 
-A reactive form library for Svelte 5 using runes and Zod validation.
+A powerful, reactive form library for Svelte 5 using runes and Zod validation with automatic memory management.
 
-## Features
+## ✨ Features
 
-- **Reactive Forms**: Built with Svelte 5 runes for optimal performance
-- **Zod Integration**: Full TypeScript support with Zod schemas
-- **Automatic Touched Tracking**: Automatically tracks which fields have been modified
-- **Validation**: Real-time validation with error handling
-- **Nested Objects**: Support for deeply nested form structures
-- **Array Support**: Dynamic arrays with add/remove operations
+- **🚀 Svelte 5 Runes**: Built with the latest Svelte 5 runes for optimal performance
+- **🔒 Zod Integration**: Full TypeScript support with Zod schemas and validation
+- **🎯 Automatic Touched Tracking**: Automatically tracks which fields have been modified
+- **⚡ Real-time Validation**: Debounced validation with error handling
+- **🌳 Nested Objects**: Deep support for complex nested form structures
+- **📋 Dynamic Arrays**: Advanced array operations with automatic state synchronization
+- **🧠 Memory Management**: Automatic resource disposal with `Symbol.dispose`
+- **🎨 Form Enhancement**: Built-in form submission handling
+- **🔧 Array Manipulation**: Rich set of array operations (push, splice, swap, etc.)
+- **💾 Caching**: Intelligent caching with memory leak prevention
 
-## Installation
+## 📦 Installation
 
 ```bash
 npm install rune-form
 ```
 
-## Basic Usage
+## 🚀 Quick Start
 
 ```svelte
 <script lang="ts">
@@ -25,36 +29,45 @@ npm install rune-form
 	import { z } from 'zod';
 
 	const schema = z.object({
-		name: z.string().min(2),
-		email: z.string().email(),
-		age: z.number().min(18)
+		name: z.string().min(2, 'Name must be at least 2 characters'),
+		email: z.string().email('Invalid email address'),
+		age: z.number().min(18, 'Must be at least 18 years old')
 	});
 
 	const form = RuneForm.fromSchema(schema);
 
-	// Handle form submission
 	const handleSubmit = async (data) => {
 		console.log('Form data:', data);
+		// Submit to server...
 	};
 </script>
 
 <form use:form.enhance={{ onSubmit: handleSubmit }}>
-	<input type="text" bind:value={form.data.name} />
-	{#if form.touched.name && form.errors.name}
-		<span class="error">{form.errors.name[0]}</span>
-	{/if}
+	<div>
+		<input type="text" bind:value={form.data.name} placeholder="Name" />
+		{#if form.touched.name && form.errors.name}
+			<span class="error">{form.errors.name[0]}</span>
+		{/if}
+	</div>
 
-	<button type="submit">Submit</button>
+	<div>
+		<input type="email" bind:value={form.data.email} placeholder="Email" />
+		{#if form.touched.email && form.errors.email}
+			<span class="error">{form.errors.email[0]}</span>
+		{/if}
+	</div>
+
+	<button type="submit" disabled={!form.isValid || form.isValidating}>
+		{form.isValidating ? 'Validating...' : 'Submit'}
+	</button>
 </form>
 ```
 
-## Automatic Touched Tracking
+## 🎯 Automatic Touched Tracking
 
 RuneForm automatically tracks which fields have been modified, regardless of how you interact with the form data.
 
 ### Direct Data Binding (Automatic)
-
-When binding directly to `form.data`, touched tracking is automatic:
 
 ```svelte
 <script>
@@ -62,12 +75,10 @@ When binding directly to `form.data`, touched tracking is automatic:
 </script>
 
 <input type="text" bind:value={form.data.name} />
-<!-- form.touched.name will be true after user modifies the field -->
+<!-- form.touched.name automatically becomes true after user modifies the field -->
 ```
 
-### Deep Nested Object Tracking (Automatic)
-
-RuneForm automatically tracks changes to deeply nested objects:
+### Deep Nested Object Tracking
 
 ```svelte
 <script>
@@ -86,15 +97,13 @@ RuneForm automatically tracks changes to deeply nested objects:
 </script>
 
 <input type="text" bind:value={form.data.address.street} />
-<!-- form.touched['address.street'] will be true -->
+<!-- form.touched['address.street'] automatically becomes true -->
 
 <input type="text" bind:value={form.data.address.country.name} />
-<!-- form.touched['address.country.name'] will be true -->
+<!-- form.touched['address.country.name'] automatically becomes true -->
 ```
 
 ### Using getField (Automatic)
-
-When using `getField()`, touched tracking is also automatic:
 
 ```svelte
 <script>
@@ -103,15 +112,17 @@ When using `getField()`, touched tracking is also automatic:
 </script>
 
 <input type="text" bind:value={nameField.value} />
-<!-- nameField.touched will be true after user modifies the field -->
+<!-- nameField.touched automatically becomes true -->
 
 <input type="text" bind:value={streetField.value} />
-<!-- streetField.touched will be true after user modifies the field -->
+<!-- streetField.touched automatically becomes true -->
 ```
 
-### Array Changes (Fully Automatic)
+## 📋 Advanced Array Operations
 
-RuneForm automatically tracks changes to array elements:
+RuneForm provides powerful array manipulation capabilities with automatic state synchronization.
+
+### Dynamic Arrays with Rich Operations
 
 ```svelte
 <script>
@@ -119,62 +130,158 @@ RuneForm automatically tracks changes to array elements:
 		items: z.array(
 			z.object({
 				name: z.string(),
-				quantity: z.number()
+				quantity: z.number(),
+				tags: z.array(z.string())
 			})
 		)
 	});
 
 	const form = RuneForm.fromSchema(schema, {
-		items: [{ name: 'Item 1', quantity: 1 }]
+		items: [{ name: 'Item 1', quantity: 1, tags: ['tag1'] }]
 	});
 </script>
 
 {#each form.data.items as item, i (i)}
-	<input type="text" bind:value={item.name} />
-	<!-- form.touched[`items.${i}.name`] automatically becomes true -->
+	<div class="item">
+		<input type="text" bind:value={item.name} />
+		<input type="number" bind:value={item.quantity} />
+
+		<!-- Array operations -->
+		<button onclick={() => form.splice('items', i, 1)}>Remove</button>
+		<button onclick={() => form.swap('items', i, i - 1)} disabled={i === 0}>Move Up</button>
+		<button onclick={() => form.swap('items', i, i + 1)} disabled={i === form.data.items.length - 1}
+			>Move Down</button
+		>
+	</div>
 {/each}
+
+<!-- Add new items -->
+<button onclick={() => form.push('items', { name: '', quantity: 1, tags: [] })}> Add Item </button>
+
+<!-- Insert at specific position -->
+<button onclick={() => form.splice('items', 1, 0, { name: 'New Item', quantity: 1, tags: [] })}>
+	Insert at Position 1
+</button>
 ```
 
-### Checking Touched State
-
-```svelte
-{#if form.touched.name}
-	<span>Name field has been modified</span>
-{/if}
-
-{#if form.touched['address.street']}
-	<span>Street address has been modified</span>
-{/if}
-
-{#if form.touched['address.country.name']}
-	<span>Country name has been modified</span>
-{/if}
-
-{#if form.touched['items.0.name']}
-	<span>First item name has been modified</span>
-{/if}
-```
-
-### Managing Touched State
+### Array Operations API
 
 ```typescript
-// Mark specific field as touched
-form.markTouched('name');
+// Add items to the end
+form.push('items', newItem);
 
-// Mark field as pristine (untouched)
-form.markFieldAsPristine('name');
+// Insert at specific position
+form.splice('items', index, 0, newItem);
 
-// Mark all fields as touched
-form.markAllTouched();
+// Remove items
+form.splice('items', index, 1);
 
-// Mark all fields as pristine
-form.markAllAsPristine();
+// Replace items
+form.splice('items', index, 1, newItem);
 
-// Reset form (clears touched state)
-form.reset();
+// Swap items
+form.swap('items', index1, index2);
+
+// Direct array mutations (also tracked automatically)
+form.data.items.push(newItem);
+form.data.items.splice(index, 1);
+form.data.items[0] = updatedItem;
 ```
 
-## API Reference
+## 🧠 Memory Management
+
+RuneForm includes automatic memory management to prevent memory leaks.
+
+### Automatic Resource Disposal
+
+```svelte
+<script>
+	import { onDestroy } from 'svelte';
+
+	const form = RuneForm.fromSchema(schema);
+
+	// Automatic disposal when component is destroyed
+	onDestroy(() => {
+		form.dispose(); // Optional: explicit cleanup
+	});
+</script>
+```
+
+### Symbol.dispose Support
+
+RuneForm implements `Symbol.dispose` for automatic resource management:
+
+```typescript
+// Automatic disposal when form goes out of scope
+{
+	const form = RuneForm.fromSchema(schema);
+	// Use form...
+	// form[Symbol.dispose]() is automatically called when leaving scope
+}
+```
+
+## 🔧 Advanced Features
+
+### Custom Error Handling
+
+```svelte
+<script>
+	const handleSubmit = async (data) => {
+		// Custom validation
+		if (data.password !== data.confirmPassword) {
+			form.setCustomError('confirmPassword', 'Passwords do not match');
+			return;
+		}
+
+		// Multiple custom errors
+		form.setCustomErrors('email', ['Email already exists', 'Please use a different email']);
+
+		// Submit form
+		await submitToServer(data);
+	};
+</script>
+```
+
+### Form State Management
+
+```typescript
+// Check form state
+console.log(form.isValid); // boolean
+console.log(form.isValidating); // boolean
+console.log(form.errors); // Record<string, string[]>
+console.log(form.touched); // Record<string, boolean>
+
+// Manage touched state
+form.markTouched('name');
+form.markFieldAsPristine('name');
+form.markAllTouched();
+form.markAllAsPristine();
+
+// Reset form
+form.reset(); // Clears all data, errors, and touched state
+```
+
+### Field Access with getField
+
+```svelte
+<script>
+	const nameField = form.getField('name');
+	const addressField = form.getField('address');
+	const nestedField = form.getField('address.street');
+	const arrayField = form.getField('items.0.name');
+</script>
+
+<!-- Field object provides rich information -->
+<div>
+	<input type="text" bind:value={nameField.value} />
+	{#if nameField.touched && nameField.error}
+		<span class="error">{nameField.error}</span>
+	{/if}
+	<span>Validating: {nameField.isValidating}</span>
+</div>
+```
+
+## 📚 API Reference
 
 ### RuneForm Class
 
@@ -183,11 +290,7 @@ form.reset();
 ```typescript
 new RuneForm<T>(
   validator: Validator<T>,
-  initialData?: Partial<T>,
-  options?: {
-    onSubmit?: (data: T) => void | Promise<void>;
-    onError?: (errors: Record<string, string[]>) => void;
-  }
+  initialData?: Partial<T>
 )
 ```
 
@@ -196,11 +299,7 @@ new RuneForm<T>(
 ```typescript
 RuneForm.fromSchema<S extends ZodObject>(
   schema: S,
-  initialData?: Partial<z.infer<S>>,
-  options?: {
-    onSubmit?: (data: z.infer<S>) => void | Promise<void>;
-    onError?: (errors: Record<string, string[]>) => void;
-  }
+  initialData?: Partial<z.infer<S>>
 ): RuneForm<z.infer<S>>
 ```
 
@@ -222,80 +321,163 @@ validateSchema(): Promise<void>
 
 // Array operations
 push<K extends ArrayPaths<T>>(path: K, value: PathValue<T, `${K}.${number}`>): void
-insert<K extends ArrayPaths<T>>(path: K, index: number, value: PathValue<T, `${K}.${number}`>): void
-remove<K extends ArrayPaths<T>>(path: K, index: number): void
+splice<K extends ArrayPaths<T>>(path: K, start: number, deleteCount?: number, ...items: PathValue<T, `${K}.${number}`>[]): void
 swap<K extends ArrayPaths<T>>(path: K, i: number, j: number): void
-replace<K extends ArrayPaths<T>>(path: K, value: PathValue<T, K>): void
+
+// Custom errors
+setCustomError(path: Paths<T>, message: string): void
+setCustomErrors(path: Paths<T>, messages: string[]): void
+
+// Resource management
+dispose(): void
+[Symbol.dispose](): void
 
 // Form enhancement
 get enhance(): (node: HTMLFormElement) => { destroy(): void }
 ```
 
-## Advanced Usage
+#### Properties
 
-### Nested Objects
+```typescript
+// Reactive state
+data: T;
+errors: Record<string, string[]>;
+customErrors: Partial<Record<string, string[]>>;
+touched: Record<string, boolean>;
+isValid: boolean;
+isValidating: boolean;
+```
+
+### FieldObject Interface
+
+```typescript
+interface FieldObject {
+	value: PathValue<T, K>;
+	error: string | undefined;
+	errors: string[];
+	touched: boolean;
+	constraints: Record<string, unknown>;
+	isValidating: boolean;
+}
+```
+
+## 🎨 Complete Example
 
 ```svelte
-<script>
+<script lang="ts">
+	import { RuneForm } from 'rune-form';
+	import { z } from 'zod';
+
 	const schema = z.object({
+		name: z.string().min(2, 'Name must be at least 2 characters'),
+		email: z.string().email('Invalid email address'),
 		address: z.object({
-			street: z.string(),
-			city: z.string(),
-			zip: z.string()
-		})
+			street: z.string().min(2, 'Street is required'),
+			city: z.string().min(2, 'City is required'),
+			zip: z.string().regex(/^\d{5}$/, 'Invalid ZIP code')
+		}),
+		items: z
+			.array(
+				z.object({
+					name: z.string().min(1, 'Item name is required'),
+					quantity: z.number().min(1, 'Quantity must be at least 1')
+				})
+			)
+			.min(1, 'At least one item is required')
 	});
 
-	const form = RuneForm.fromSchema(schema);
-</script>
-
-<input type="text" bind:value={form.data.address.street} />
-<!-- form.touched['address.street'] automatically becomes true -->
-```
-
-### Dynamic Arrays
-
-```svelte
-<script>
-	const schema = z.object({
-		items: z.array(
-			z.object({
-				name: z.string(),
-				quantity: z.number()
-			})
-		)
+	const form = RuneForm.fromSchema(schema, {
+		name: '',
+		email: '',
+		address: {
+			street: '',
+			city: '',
+			zip: ''
+		},
+		items: []
 	});
 
-	const form = RuneForm.fromSchema(schema);
-</script>
-
-{#each form.data.items as item, i (i)}
-	<div>
-		<input type="text" bind:value={item.name} />
-		<input type="number" bind:value={item.quantity} />
-		<button on:click={() => form.remove('items', i)}>Remove</button>
-	</div>
-{/each}
-
-<button on:click={() => form.push('items', { name: '', quantity: 1 })}> Add Item </button>
-```
-
-### Custom Validation
-
-```svelte
-<script>
 	const handleSubmit = async (data) => {
-		// Custom validation logic
-		if (data.password !== data.confirmPassword) {
-			form.setCustomError('confirmPassword', 'Passwords do not match');
-			return;
-		}
-
-		// Submit form
-		await submitToServer(data);
+		console.log('Submitting:', data);
+		// Submit to server...
 	};
 </script>
+
+<form use:form.enhance={{ onSubmit: handleSubmit }} class="space-y-6">
+	<!-- Basic fields -->
+	<div>
+		<label for="name">Name</label>
+		<input id="name" type="text" bind:value={form.data.name} />
+		{#if form.touched.name && form.errors.name}
+			<span class="error">{form.errors.name[0]}</span>
+		{/if}
+	</div>
+
+	<div>
+		<label for="email">Email</label>
+		<input id="email" type="email" bind:value={form.data.email} />
+		{#if form.touched.email && form.errors.email}
+			<span class="error">{form.errors.email[0]}</span>
+		{/if}
+	</div>
+
+	<!-- Nested object -->
+	<fieldset>
+		<legend>Address</legend>
+		<div>
+			<label for="street">Street</label>
+			<input id="street" type="text" bind:value={form.data.address.street} />
+			{#if form.touched['address.street'] && form.errors['address.street']}
+				<span class="error">{form.errors['address.street'][0]}</span>
+			{/if}
+		</div>
+		<!-- More address fields... -->
+	</fieldset>
+
+	<!-- Dynamic array -->
+	<fieldset>
+		<legend>Items</legend>
+		{#each form.data.items as item, i (i)}
+			<div class="item">
+				<input type="text" bind:value={item.name} placeholder="Item name" />
+				<input type="number" bind:value={item.quantity} min="1" />
+				<button type="button" onclick={() => form.splice('items', i, 1)}>Remove</button>
+				<button type="button" onclick={() => form.swap('items', i, i - 1)} disabled={i === 0}
+					>↑</button
+				>
+				<button
+					type="button"
+					onclick={() => form.swap('items', i, i + 1)}
+					disabled={i === form.data.items.length - 1}>↓</button
+				>
+			</div>
+		{/each}
+		<button type="button" onclick={() => form.push('items', { name: '', quantity: 1 })}>
+			Add Item
+		</button>
+	</fieldset>
+
+	<button type="submit" disabled={!form.isValid || form.isValidating}>
+		{form.isValidating ? 'Validating...' : 'Submit'}
+	</button>
+
+	<!-- Form state display -->
+	<div class="form-state">
+		<p>Valid: {form.isValid}</p>
+		<p>Validating: {form.isValidating}</p>
+		<p>Touched fields: {Object.keys(form.touched).length}</p>
+		<p>Error count: {Object.keys(form.errors).length}</p>
+	</div>
+</form>
 ```
 
-## License
+## 🔧 Performance Features
+
+- **Intelligent Caching**: Path compilation and field object caching with automatic cleanup
+- **Debounced Validation**: Prevents excessive validation calls during rapid typing
+- **Memory Management**: Automatic resource disposal and memory leak prevention
+- **Optimized Reactivity**: Efficient Svelte 5 rune usage for minimal re-renders
+
+## 📄 License
 
 MIT

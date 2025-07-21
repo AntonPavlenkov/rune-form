@@ -5,81 +5,230 @@
 <!-- Hero Section -->
 <section class="bg-gradient-to-br from-amber-100 to-emerald-50 px-4 py-12 text-center">
 	<h1 class="mb-2 text-4xl font-bold">RuneForm for SvelteKit</h1>
-	<p class="mx-auto mb-4 max-w-2xl text-lg text-gray-700">
-		A type-safe, deeply reactive, and ergonomic form builder for Svelte 5. Powered by Zod for
-		validation, with full support for nested objects, arrays, and custom constraints. Minimal
-		boilerplate, maximum flexibility.
+	<p class="mx-auto mb-4 max-w-3xl text-lg text-gray-700">
+		A powerful, type-safe, and deeply reactive form library for Svelte 5. Built with the latest
+		runes, featuring automatic memory management, advanced array operations, and seamless Zod
+		integration. Minimal boilerplate, maximum power.
 	</p>
-	<a
-		href="https://github.com/AntonPavlenkov/rune-form"
-		target="_blank"
-		class="mt-2 inline-block rounded bg-amber-400 px-6 py-2 text-white shadow transition hover:bg-amber-500"
-		>GitHub</a
-	>
+	<div class="flex justify-center gap-4">
+		<a
+			href="https://github.com/AntonPavlenkov/rune-form"
+			target="_blank"
+			class="inline-block rounded bg-amber-400 px-6 py-2 text-white shadow transition hover:bg-amber-500"
+			>GitHub</a
+		>
+		<a
+			href="#playground"
+			class="inline-block rounded bg-emerald-500 px-6 py-2 text-white shadow transition hover:bg-emerald-600"
+			>Try Demo</a
+		>
+	</div>
+</section>
+
+<!-- Features Section -->
+<section class="mx-auto max-w-6xl px-4 py-10">
+	<h2 class="mb-8 text-center text-3xl font-bold">✨ Powerful Features</h2>
+	<div class="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+		<div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+			<div class="mb-3 text-2xl">🚀</div>
+			<h3 class="mb-2 text-lg font-semibold">Svelte 5 Runes</h3>
+			<p class="text-gray-600">
+				Built with the latest Svelte 5 runes for optimal performance and minimal re-renders.
+			</p>
+		</div>
+
+		<div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+			<div class="mb-3 text-2xl">🔒</div>
+			<h3 class="mb-2 text-lg font-semibold">Type-Safe Validation</h3>
+			<p class="text-gray-600">
+				Full TypeScript support with Zod schemas and comprehensive validation.
+			</p>
+		</div>
+
+		<div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+			<div class="mb-3 text-2xl">🎯</div>
+			<h3 class="mb-2 text-lg font-semibold">Automatic Tracking</h3>
+			<p class="text-gray-600">
+				Automatically tracks touched fields, validation state, and form changes.
+			</p>
+		</div>
+
+		<div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+			<div class="mb-3 text-2xl">📋</div>
+			<h3 class="mb-2 text-lg font-semibold">Advanced Arrays</h3>
+			<p class="text-gray-600">
+				Rich array operations: push, splice, swap, insert with automatic state sync.
+			</p>
+		</div>
+
+		<div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+			<div class="mb-3 text-2xl">🧠</div>
+			<h3 class="mb-2 text-lg font-semibold">Memory Management</h3>
+			<p class="text-gray-600">
+				Automatic resource disposal with Symbol.dispose and intelligent caching.
+			</p>
+		</div>
+
+		<div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+			<div class="mb-3 text-2xl">⚡</div>
+			<h3 class="mb-2 text-lg font-semibold">Performance Optimized</h3>
+			<p class="text-gray-600">
+				Debounced validation, intelligent caching, and optimized reactivity.
+			</p>
+		</div>
+	</div>
 </section>
 
 <!-- Documentation Section -->
-<section class="mx-auto max-w-3xl px-4 py-10">
-	<h2 class="mb-4 text-2xl font-semibold">How RuneForm Works</h2>
-	<ul class="mb-6 list-disc pl-6 text-left text-gray-800">
-		<li><b>Type-safe:</b> All form data and errors are fully typed via your Zod schema.</li>
-		<li>
-			<b>Deep reactivity:</b> Changes to any nested field or array are instantly reflected in the UI.
-		</li>
-		<li>
-			<b>Validation:</b> Uses Zod for synchronous and async validation, with error mapping to fields.
-		</li>
-		<li><b>Array fields:</b> Add, remove, and reorder array items with full reactivity.</li>
-		<li><b>Custom errors:</b> Set custom errors programmatically for any field.</li>
-		<li><b>SSR/SSG ready:</b> Works seamlessly with SvelteKit's server-side rendering.</li>
-		<li><b>Minimal boilerplate:</b> Just define your schema and bind to <code>form.data</code>.</li>
-	</ul>
+<section class="mx-auto max-w-4xl px-4 py-10">
+	<h2 class="mb-6 text-center text-3xl font-bold">🚀 Getting Started</h2>
 
-	<h3 class="mb-2 text-xl font-semibold">Basic Usage</h3>
-	<pre class="mb-6 overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code
-			>{`import { RuneForm } from '$lib/RuneForm.svelte.js';\nimport { createZodValidator } from '$lib/zodAdapter.js';\nimport { z } from 'zod';\n\nconst schema = z.object({\n  name: z.string().min(2),\n  email: z.string().email()\n});\n\nconst form = new RuneForm(createZodValidator(schema), {});\n`}</code
-		></pre>
+	<div class="mb-8 rounded-lg bg-gray-50 p-6">
+		<h3 class="mb-4 text-xl font-semibold">Installation</h3>
+		<pre class="overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code>npm install rune-form</code
+			></pre>
+	</div>
 
-	<h3 class="mb-2 text-xl font-semibold">Deeply Nested Example</h3>
-	<pre class="mb-6 overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code
-			>{`z.object({\n  name: z.string().min(2).max(50),\n  email: z.string().email(),\n  password: z.string().min(8).max(50),\n  address: z.object({\n    street: z.string().min(2).max(50),\n    city: z.string().min(2).max(50),\n    state: z.string().min(2).max(50),\n    zip: z.string().min(2).max(50),\n    parkingLots: z.array(\n      z.object({\n        name: z.string().min(5).max(50),\n        lat: z.number(),\n        lng: z.number()\n      })\n    )\n  })\n})`}</code
-		></pre>
+	<div class="mb-8 rounded-lg bg-gray-50 p-6">
+		<h3 class="mb-4 text-xl font-semibold">Basic Usage</h3>
+		<pre class="overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code
+				>{`import { RuneForm } from 'rune-form';
+import { z } from 'zod';
+
+const schema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Invalid email address')
+});
+
+const form = RuneForm.fromSchema(schema);
+
+// Bind directly to form.data
+<input type="text" bind:value={form.data.name} />
+{#if form.touched.name && form.errors.name}
+  <span class="error">{form.errors.name[0]}</span>
+{/if}`}</code
+			></pre>
+	</div>
+
+	<div class="mb-8 rounded-lg bg-gray-50 p-6">
+		<h3 class="mb-4 text-xl font-semibold">Advanced Array Operations</h3>
+		<pre class="overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code
+				>{`// Add items
+form.push('items', newItem);
+
+// Insert at position
+form.splice('items', index, 0, newItem);
+
+// Remove items
+form.splice('items', index, 1);
+
+// Swap items
+form.swap('items', index1, index2);
+
+// Direct mutations (also tracked)
+form.data.items.push(newItem);
+form.data.items.splice(index, 1);`}</code
+			></pre>
+	</div>
+
+	<div class="mb-8 rounded-lg bg-gray-50 p-6">
+		<h3 class="mb-4 text-xl font-semibold">Memory Management</h3>
+		<pre class="overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code
+				>{`// Automatic disposal with Symbol.dispose
+{
+  const form = RuneForm.fromSchema(schema);
+  // Use form...
+  // form[Symbol.dispose]() is automatically called
+}
+
+// Manual disposal
+const form = RuneForm.fromSchema(schema);
+// Use form...
+form.dispose(); // Clean up resources`}</code
+			></pre>
+	</div>
 </section>
 
 <!-- Playground Section -->
-<section class="border-t border-b bg-white px-4 py-10">
-	<h2 class="mb-4 text-center text-2xl font-semibold">Live Playground</h2>
-	<div class="mx-auto max-w-5xl">
+<section id="playground" class="border-t border-b bg-white px-4 py-10">
+	<h2 class="mb-4 text-center text-3xl font-bold">🎮 Live Playground</h2>
+	<p class="mx-auto mb-8 max-w-2xl text-center text-gray-600">
+		Try out RuneForm's powerful features in real-time. Test array operations, validation, and see
+		how automatic touched tracking works.
+	</p>
+	<div class="mx-auto max-w-6xl">
 		<FormTester />
 	</div>
 </section>
 
 <!-- API Reference Section -->
-<section class="mx-auto max-w-3xl px-4 py-10">
-	<h2 class="mb-4 text-2xl font-semibold">API Reference</h2>
-	<ul class="mb-6 list-disc pl-6 text-left text-gray-800">
-		<li>
-			<b>RuneForm&lt;T&gt;:</b> Main class. Use <code>form.data</code> for binding,
-			<code>form.errors</code> for error messages.
-		</li>
-		<li>
-			<b>form.getField(path):</b> Get a field object for advanced control (value, error, constraints,
-			etc).
-		</li>
-		<li><b>form.push(path, value):</b> Add an item to an array field.</li>
-		<li><b>form.setCustomError(path, message):</b> Set a custom error for a field.</li>
-		<li><b>form.validateSchema():</b> Manually trigger validation.</li>
-		<li><b>form.enhance:</b> Svelte action for progressive enhancement.</li>
-	</ul>
-	<h3 class="mb-2 text-xl font-semibold">Advanced Tips</h3>
-	<ul class="list-disc pl-6 text-gray-800">
-		<li>
-			Use <code>form.getField('address.city')</code> for fine-grained control of deeply nested fields.
-		</li>
-		<li>All state is reactive and SSR-friendly.</li>
-		<li>Integrates with any Zod schema, including unions and discriminated unions.</li>
-		<li>Use <code>form.setCustomErrors</code> for multiple errors per field.</li>
-	</ul>
+<section class="mx-auto max-w-4xl px-4 py-10">
+	<h2 class="mb-6 text-center text-3xl font-bold">📚 API Reference</h2>
+
+	<div class="grid grid-cols-1 gap-8 md:grid-cols-2">
+		<div class="rounded-lg border border-gray-200 bg-white p-6">
+			<h3 class="mb-4 text-xl font-semibold">Core Methods</h3>
+			<ul class="space-y-2 text-sm">
+				<li>
+					<code class="rounded bg-gray-100 px-1">RuneForm.fromSchema(schema, initialData?)</code>
+				</li>
+				<li>
+					<code class="rounded bg-gray-100 px-1">form.getField(path)</code> - Get field object
+				</li>
+				<li>
+					<code class="rounded bg-gray-100 px-1">form.validateSchema()</code> - Manual validation
+				</li>
+				<li><code class="rounded bg-gray-100 px-1">form.reset()</code> - Reset form state</li>
+				<li><code class="rounded bg-gray-100 px-1">form.dispose()</code> - Clean up resources</li>
+			</ul>
+		</div>
+
+		<div class="rounded-lg border border-gray-200 bg-white p-6">
+			<h3 class="mb-4 text-xl font-semibold">Array Operations</h3>
+			<ul class="space-y-2 text-sm">
+				<li><code class="rounded bg-gray-100 px-1">form.push(path, value)</code> - Add to end</li>
+				<li>
+					<code class="rounded bg-gray-100 px-1"
+						>form.splice(path, start, deleteCount?, ...items)</code
+					> - Insert/remove
+				</li>
+				<li><code class="rounded bg-gray-100 px-1">form.swap(path, i, j)</code> - Swap items</li>
+				<li>
+					<code class="rounded bg-gray-100 px-1">form.data.array.push()</code> - Direct mutation
+				</li>
+			</ul>
+		</div>
+
+		<div class="rounded-lg border border-gray-200 bg-white p-6">
+			<h3 class="mb-4 text-xl font-semibold">State Management</h3>
+			<ul class="space-y-2 text-sm">
+				<li>
+					<code class="rounded bg-gray-100 px-1">form.markTouched(path)</code> - Mark field touched
+				</li>
+				<li>
+					<code class="rounded bg-gray-100 px-1">form.markAllTouched()</code> - Mark all touched
+				</li>
+				<li>
+					<code class="rounded bg-gray-100 px-1">form.markAllAsPristine()</code> - Mark all pristine
+				</li>
+				<li>
+					<code class="rounded bg-gray-100 px-1">form.setCustomError(path, message)</code> - Set custom
+					error
+				</li>
+			</ul>
+		</div>
+
+		<div class="rounded-lg border border-gray-200 bg-white p-6">
+			<h3 class="mb-4 text-xl font-semibold">Reactive Properties</h3>
+			<ul class="space-y-2 text-sm">
+				<li><code class="rounded bg-gray-100 px-1">form.data</code> - Form data (reactive)</li>
+				<li><code class="rounded bg-gray-100 px-1">form.errors</code> - Validation errors</li>
+				<li><code class="rounded bg-gray-100 px-1">form.touched</code> - Touched state</li>
+				<li><code class="rounded bg-gray-100 px-1">form.isValid</code> - Form validity</li>
+				<li><code class="rounded bg-gray-100 px-1">form.isValidating</code> - Validation state</li>
+			</ul>
+		</div>
+	</div>
 </section>
 
 <!-- Footer -->
