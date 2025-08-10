@@ -1,6 +1,22 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type { z, ZodObject, ZodTypeAny } from 'zod';
-import type { Paths, PathValue } from './types.js';
+import { createCustomValidator } from './customAdapter.js';
+import {
+	clearStaleFieldCacheEntries,
+	clearStalePathCacheEntries,
+	debounceValidation,
+	ensureArrayElementsReactive,
+	evictOldestFromMap,
+	getTouchedKeysForArray,
+	handleArrayMethodTouchedState,
+	MUTATING_ARRAY_METHODS,
+	parsePath,
+	shiftArrayIndicesInTouchedState,
+	syncTouchedStateForArrayInsertion,
+	syncTouchedStateForArrayRemoval,
+	syncTouchedStateForArraySwap
+} from './helpers.js';
+import type { ArrayPaths, CustomValidator, Paths, PathValue } from './types.js';
 import { createZodValidator } from './zodAdapter.js';
 
 // TypeScript declaration for Symbol.dispose (available in TypeScript 5.2+)
@@ -46,22 +62,14 @@ export class RuneForm<T extends Record<string, unknown>> {
 	private _fieldCache = new SvelteMap<string, unknown>();
 	private _validPaths: SvelteSet<string>;
 	private _isInternalUpdate = false;
+	private _validationTimeoutId: number | undefined = undefined;
 
 	// Cache for Proxies to prevent memory leaks
 	private _proxyCache = new WeakMap<object, object>();
 	// Cache for wrapped array methods to avoid recreating them
 	private _methodCache = new WeakMap<object, SvelteMap<string, (...args: unknown[]) => unknown>>();
 	// Set of array methods that modify the array (for O(1) lookup)
-	private static readonly _MUTATING_ARRAY_METHODS = new SvelteSet([
-		'splice',
-		'push',
-		'pop',
-		'shift',
-		'unshift',
-		'reverse',
-		'sort',
-		'fill'
-	]);
+	private static readonly _MUTATING_ARRAY_METHODS = new SvelteSet(MUTATING_ARRAY_METHODS);
 	// Track pending validation for array operations
 	private _pendingArrayValidation = new SvelteSet<string>();
 
@@ -69,9 +77,7 @@ export class RuneForm<T extends Record<string, unknown>> {
 	private static readonly _MAX_PATH_CACHE_SIZE = 1000;
 	private static readonly _MAX_FIELD_CACHE_SIZE = 500;
 
-	// Pre-compiled regex patterns for array path operations
-	private static readonly _ARRAY_INDEX_PATTERN = /^(\d+)\./;
-	private static readonly _ARRAY_FULL_PATTERN = /^(\d+)\.(.*)/;
+	// (removed) legacy precompiled regex patterns for array path operations -> replaced by on-demand patterns
 
 	constructor(
 		private validator: Validator<T>,
@@ -89,7 +95,6 @@ export class RuneForm<T extends Record<string, unknown>> {
 		this._validPaths = new SvelteSet(paths);
 
 		// Optimized validation effect with better tracking
-		let validationTimeout: number;
 		$effect(() => {
 			// Track specific properties for changes
 			$effect.tracking();
@@ -97,10 +102,12 @@ export class RuneForm<T extends Record<string, unknown>> {
 			this._data && this.touched;
 
 			// Clear existing timeout
-			clearTimeout(validationTimeout);
+			if (this._validationTimeoutId !== undefined) {
+				clearTimeout(this._validationTimeoutId);
+			}
 
 			// Debounce validation to avoid excessive calls during rapid updates
-			validationTimeout = setTimeout(() => {
+			this._validationTimeoutId = setTimeout(() => {
 				this.validateSchema();
 			}, 100) as unknown as number;
 		});
@@ -108,6 +115,8 @@ export class RuneForm<T extends Record<string, unknown>> {
 		// Create a reactive data object that automatically marks fields as touched
 		this.data = this.createReactiveData(this._data);
 	}
+
+	// (helpers moved to .helpers.ts)
 
 	// Create a reactive data object that automatically tracks changes
 	private createReactiveData = (data: T, parentPath: string = ''): T => {
@@ -194,6 +203,8 @@ export class RuneForm<T extends Record<string, unknown>> {
 						if (!wrappedMethod) {
 							const method = value as (...args: unknown[]) => unknown;
 							wrappedMethod = (...args: unknown[]) => {
+								// Capture previous length for methods where it matters (e.g. pop)
+								const previousLength = target.length;
 								const result = method.apply(target, args);
 
 								// Mark the array as touched and trigger debounced validation
@@ -202,7 +213,16 @@ export class RuneForm<T extends Record<string, unknown>> {
 									this._debouncedArrayValidation(parentPath);
 
 									// Handle array method specific touched state syncing
-									this._handleArrayMethodTouchedState(prop, args, target, parentPath);
+									this._handleArrayMethodTouchedState(
+										prop,
+										args,
+										target,
+										parentPath,
+										previousLength
+									);
+
+									// Clear stale field cache entries related to this array path
+									this._clearStaleFieldCacheEntries(parentPath);
 								}
 
 								return result;
@@ -260,6 +280,13 @@ export class RuneForm<T extends Record<string, unknown>> {
 		return new RuneForm<z.infer<S>>(createZodValidator(schema), initialData);
 	}
 
+	static fromCustom<T extends Record<string, unknown>>(
+		validator: CustomValidator<T>,
+		initialData?: Partial<T>
+	) {
+		return new RuneForm(createCustomValidator(validator), initialData);
+	}
+
 	getField<K extends Paths<T>>(
 		path: K
 	): {
@@ -304,11 +331,7 @@ export class RuneForm<T extends Record<string, unknown>> {
 
 		// Limit field cache size to prevent memory leaks
 		if (this._fieldCache.size >= RuneForm._MAX_FIELD_CACHE_SIZE) {
-			// Clear oldest entries (simple FIFO approach)
-			const firstKey = this._fieldCache.keys().next().value;
-			if (firstKey) {
-				this._fieldCache.delete(firstKey);
-			}
+			evictOldestFromMap(this._fieldCache);
 		}
 
 		this._fieldCache.set(path, field);
@@ -324,24 +347,13 @@ export class RuneForm<T extends Record<string, unknown>> {
 
 		// Limit cache size to prevent memory leaks
 		if (this._pathCache.size >= RuneForm._MAX_PATH_CACHE_SIZE) {
-			// Clear oldest entries (simple FIFO approach)
-			const firstKey = this._pathCache.keys().next().value;
-			if (firstKey) {
-				this._pathCache.delete(firstKey);
-			}
+			evictOldestFromMap(this._pathCache);
 		}
 
 		// Parse and cache the path - optimize by doing it once
-		const segments = path.split('.');
-		const keys = new Array(segments.length);
-		const isArrayIndex = new Array(segments.length);
-
-		for (let i = 0; i < segments.length; i++) {
-			const segment = segments[i];
-			const isIndex = /^\d+$/.test(segment);
-			keys[i] = isIndex ? Number(segment) : segment;
-			isArrayIndex[i] = isIndex;
-		}
+		const parsed = parsePath(path);
+		const keys = parsed;
+		const isArrayIndex = parsed.map((segment) => typeof segment === 'number');
 
 		const get = (obj: T): unknown => {
 			let current: unknown = obj;
@@ -423,11 +435,15 @@ export class RuneForm<T extends Record<string, unknown>> {
 		});
 
 		// Safety cleanup: remove stale entries after a timeout
-		setTimeout(() => {
-			if (this._pendingArrayValidation.has(path)) {
-				this._pendingArrayValidation.delete(path);
-			}
-		}, 5000) as unknown as number; // 5 second timeout
+		debounceValidation(
+			() => {
+				if (this._pendingArrayValidation.has(path)) {
+					this._pendingArrayValidation.delete(path);
+				}
+			},
+			5000,
+			{ current: undefined }
+		);
 	}
 
 	markTouched(path: Paths<T>) {
@@ -457,24 +473,14 @@ export class RuneForm<T extends Record<string, unknown>> {
 		if (!cached) return;
 		const arr = cached.get(this._data);
 		if (Array.isArray(arr)) {
-			// Create a copy of the array to avoid direct mutation
-			const newArray = [...(arr as unknown[])];
-			operation(newArray);
-			// Use the Proxy's setter to ensure reactivity
-			cached.set(this._data, newArray);
+			// Perform the array operation directly on the array
+			operation(arr);
+
+			// Mark the array path as touched
 			this.markTouched(path);
 
 			// Clear stale field cache entries related to this array path
 			this._clearStaleFieldCacheEntries(path as string);
-
-			// Recreate reactive proxies for the new array to ensure proper tracking
-			this._isInternalUpdate = true;
-			const updatedArray = cached.get(this._data);
-			if (Array.isArray(updatedArray)) {
-				const reactiveArray = this.createReactiveArray(updatedArray, path as string);
-				cached.set(this._data, reactiveArray);
-			}
-			this._isInternalUpdate = false;
 		}
 	}
 
@@ -482,6 +488,11 @@ export class RuneForm<T extends Record<string, unknown>> {
 		this._isInternalUpdate = true;
 		this._data = this.safePopulate(this.initialData);
 		this._isInternalUpdate = false;
+		// Clear pending validation timeout
+		if (this._validationTimeoutId !== undefined) {
+			clearTimeout(this._validationTimeoutId);
+			this._validationTimeoutId = undefined;
+		}
 		this.errors = {};
 		this.customErrors = {};
 		this.touched = {};
@@ -509,10 +520,10 @@ export class RuneForm<T extends Record<string, unknown>> {
 
 	swap<K extends ArrayPaths<T>>(path: K, i: number, j: number) {
 		this._executeArrayOperation(path, (arr) => {
-			// Swap the array elements
+			// First swap the array elements
 			[arr[i], arr[j]] = [arr[j], arr[i]];
 
-			// Sync touched state for swapped items
+			// Re-enable touched state sync with the helper functions
 			this._syncTouchedStateForArraySwap(path as string, i, j);
 		});
 	}
@@ -525,16 +536,16 @@ export class RuneForm<T extends Record<string, unknown>> {
 		...items: PathValue<T, `${K}.${number}`>[]
 	) {
 		this._executeArrayOperation(path, (arr) => {
-			const actualDeleteCount = deleteCount ?? arr.length - start;
-			const insertCount = items.length;
-
+			// Perform the array operation first
 			if (deleteCount !== undefined) {
 				arr.splice(start, deleteCount, ...items);
 			} else {
 				arr.splice(start);
 			}
 
-			// Sync touched state for array operations
+			// Re-enable touched state sync with the helper functions
+			const actualDeleteCount = deleteCount ?? arr.length - start;
+			const insertCount = items.length;
 			if (actualDeleteCount > 0) {
 				this._syncTouchedStateForArrayRemoval(path as string, start, actualDeleteCount);
 			}
@@ -542,38 +553,6 @@ export class RuneForm<T extends Record<string, unknown>> {
 				this._syncTouchedStateForArrayInsertion(path as string, start, insertCount);
 			}
 		});
-	}
-
-	private _enhance =
-		(
-			options: {
-				onSubmit?: (data: T) => void | Promise<void>;
-				onError?: (errors: Record<string, string[]>) => void;
-			} = {}
-		) =>
-		(el: HTMLFormElement) => {
-			const handleSubmit = async (e: SubmitEvent) => {
-				e.preventDefault();
-
-				await this.validateSchema();
-				if (this._errorCount === 0) {
-					await options.onSubmit?.(this._data);
-				} else {
-					options.onError?.(this.errors);
-				}
-			};
-
-			el.addEventListener('submit', handleSubmit);
-
-			return {
-				destroy() {
-					el.removeEventListener('submit', handleSubmit);
-				}
-			};
-		};
-
-	get enhance() {
-		return this._enhance();
 	}
 
 	// Factory for creating field objects to reduce memory allocation
@@ -633,34 +612,7 @@ export class RuneForm<T extends Record<string, unknown>> {
 
 	// Helper methods for syncing touched state during array operations
 	private _syncTouchedStateForArraySwap(arrayPath: string, i: number, j: number) {
-		// Get all touched keys for the array
-		const touchedKeys = Object.keys(this.touched).filter(
-			(key) => key.startsWith(`${arrayPath}.${i}.`) || key.startsWith(`${arrayPath}.${j}.`)
-		);
-
-		// Create a temporary map to store the touched states
-		const tempTouched = new SvelteMap<string, boolean>();
-
-		// Store current touched states
-		for (const key of touchedKeys) {
-			tempTouched.set(key, this.touched[key]);
-		}
-
-		// First, delete all existing keys to avoid conflicts
-		for (const key of touchedKeys) {
-			delete this.touched[key];
-		}
-
-		// Then create the new swapped keys
-		for (const key of touchedKeys) {
-			if (key.startsWith(`${arrayPath}.${i}.`)) {
-				const newKey = key.replace(`${arrayPath}.${i}.`, `${arrayPath}.${j}.`);
-				this.touched[newKey] = tempTouched.get(key) ?? false;
-			} else if (key.startsWith(`${arrayPath}.${j}.`)) {
-				const newKey = key.replace(`${arrayPath}.${j}.`, `${arrayPath}.${i}.`);
-				this.touched[newKey] = tempTouched.get(key) ?? false;
-			}
-		}
+		syncTouchedStateForArraySwap(this.touched, arrayPath, i, j);
 	}
 
 	private _syncTouchedStateForArrayRemoval(
@@ -668,22 +620,7 @@ export class RuneForm<T extends Record<string, unknown>> {
 		startIndex: number,
 		deleteCount: number
 	) {
-		// Get all touched keys for the array
-		const touchedKeys = this._getTouchedKeysForArray(arrayPath);
-
-		// Remove touched state for deleted items
-		for (let i = 0; i < deleteCount; i++) {
-			const indexToRemove = startIndex + i;
-			const prefix = `${arrayPath}.${indexToRemove}.`;
-			const keysToRemove = touchedKeys.filter((key) => key.startsWith(prefix));
-
-			for (const key of keysToRemove) {
-				delete this.touched[key];
-			}
-		}
-
-		// Shift remaining indices down
-		this._shiftArrayIndices(touchedKeys, arrayPath, startIndex + deleteCount, -deleteCount);
+		syncTouchedStateForArrayRemoval(this.touched, arrayPath, startIndex, deleteCount);
 	}
 
 	private _syncTouchedStateForArrayInsertion(
@@ -691,37 +628,22 @@ export class RuneForm<T extends Record<string, unknown>> {
 		startIndex: number,
 		insertCount: number
 	) {
-		// Get all touched keys for the array
-		const touchedKeys = this._getTouchedKeysForArray(arrayPath);
-
-		// Shift existing indices up to make room for new items
-		this._shiftArrayIndices(touchedKeys, arrayPath, startIndex, insertCount);
+		syncTouchedStateForArrayInsertion(this.touched, arrayPath, startIndex, insertCount);
 	}
 
 	// Helper method to ensure array elements remain reactive after splice
 	private _ensureArrayElementsReactive(arrayPath: string, array: unknown[]) {
-		// Check each array element and ensure it's reactive
-		for (let i = 0; i < array.length; i++) {
-			const element = array[i];
-			if (element && typeof element === 'object' && !Array.isArray(element)) {
-				const elementPath = `${arrayPath}.${i}`;
-				// Always create a reactive proxy for the element to ensure reactivity
-				const reactiveElement = this.createReactiveData(element as T, elementPath);
-				// Replace the element in the array
-				array[i] = reactiveElement;
-			} else if (Array.isArray(element)) {
-				const elementPath = `${arrayPath}.${i}`;
-				// Always create a reactive array for the nested array to ensure reactivity
-				const reactiveArray = this.createReactiveArray(element, elementPath);
-				// Replace the element in the array
-				array[i] = reactiveArray;
-			}
-		}
+		ensureArrayElementsReactive(
+			array,
+			arrayPath,
+			this.createReactiveData,
+			this.createReactiveArray
+		);
 	}
 
 	// Helper method to get all touched keys for a specific array
 	private _getTouchedKeysForArray(arrayPath: string): string[] {
-		return Object.keys(this.touched).filter((key) => key.startsWith(`${arrayPath}.`));
+		return getTouchedKeysForArray(this.touched, arrayPath);
 	}
 
 	// Helper method to shift array indices in touched state
@@ -731,40 +653,7 @@ export class RuneForm<T extends Record<string, unknown>> {
 		startIndex: number,
 		shiftAmount: number
 	) {
-		const indexPattern = new RegExp(`^${arrayPath}\\.(\\d+)\\.`);
-		const fullPattern = new RegExp(`^${arrayPath}\\.(\\d+)\\.(.*)`);
-
-		// Filter keys that need to be shifted
-		const keysToShift = touchedKeys.filter((key) => {
-			const match = key.match(indexPattern);
-			if (!match) return false;
-			const index = parseInt(match[1], 10);
-			return index >= startIndex;
-		});
-
-		// Sort by index in descending order to avoid conflicts (for insertion)
-		if (shiftAmount > 0) {
-			keysToShift.sort((a, b) => {
-				const matchA = a.match(indexPattern);
-				const matchB = b.match(indexPattern);
-				if (!matchA || !matchB) return 0;
-				return parseInt(matchB[1], 10) - parseInt(matchA[1], 10);
-			});
-		}
-
-		// Shift the keys
-		for (const key of keysToShift) {
-			const match = key.match(fullPattern);
-			if (match) {
-				const oldIndex = parseInt(match[1], 10);
-				const restOfPath = match[2];
-				const newIndex = oldIndex + shiftAmount;
-				const newKey = `${arrayPath}.${newIndex}.${restOfPath}`;
-
-				this.touched[newKey] = this.touched[key];
-				delete this.touched[key];
-			}
-		}
+		shiftArrayIndicesInTouchedState(this.touched, touchedKeys, arrayPath, startIndex, shiftAmount);
 	}
 
 	// Helper method to handle array method specific touched state syncing
@@ -772,19 +661,18 @@ export class RuneForm<T extends Record<string, unknown>> {
 		methodName: string,
 		args: unknown[],
 		target: unknown[],
-		parentPath: string
+		parentPath: string,
+		previousLength?: number
 	) {
+		const result = handleArrayMethodTouchedState(methodName, args, target, previousLength);
+
 		switch (methodName) {
 			case 'splice': {
-				const [start, deleteCount = 0, ...insertItems] = args as [number, number?, ...unknown[]];
-				const actualDeleteCount = deleteCount ?? target.length - start;
-				const insertCount = insertItems.length;
-
-				if (actualDeleteCount > 0) {
-					this._syncTouchedStateForArrayRemoval(parentPath, start, actualDeleteCount);
+				if (result.deleteCount > 0) {
+					this._syncTouchedStateForArrayRemoval(parentPath, result.start, result.deleteCount);
 				}
-				if (insertCount > 0) {
-					this._syncTouchedStateForArrayInsertion(parentPath, start, insertCount);
+				if (result.insertCount > 0) {
+					this._syncTouchedStateForArrayInsertion(parentPath, result.start, result.insertCount);
 				}
 
 				// Ensure remaining array elements are reactive after splice
@@ -792,22 +680,20 @@ export class RuneForm<T extends Record<string, unknown>> {
 				break;
 			}
 			case 'pop': {
-				// Remove touched state for the last item
-				const lastIndex = target.length - 1;
-				if (lastIndex >= 0) {
-					this._syncTouchedStateForArrayRemoval(parentPath, lastIndex, 1);
+				// Remove touched state for the removed last item
+				if (result.lastIndexBeforePop !== undefined && result.lastIndexBeforePop >= 0) {
+					this._syncTouchedStateForArrayRemoval(parentPath, result.lastIndexBeforePop, 1);
 				}
 				break;
 			}
 			case 'shift': {
 				// Remove touched state for the first item and shift others down
-				this._syncTouchedStateForArrayRemoval(parentPath, 0, 1);
+				this._syncTouchedStateForArrayRemoval(parentPath, result.start, result.deleteCount);
 				break;
 			}
 			case 'unshift': {
 				// Shift existing items up to make room for new items
-				const insertCount = args.length;
-				this._syncTouchedStateForArrayInsertion(parentPath, 0, insertCount);
+				this._syncTouchedStateForArrayInsertion(parentPath, result.start, result.insertCount);
 				break;
 			}
 			case 'push':
@@ -823,21 +709,10 @@ export class RuneForm<T extends Record<string, unknown>> {
 		this.validateSchema();
 	}
 
-	// Helper method to clear stale field cache entries for array operations
+	// Helper method to clear stale cache entries for array operations
 	private _clearStaleFieldCacheEntries(arrayPath: string) {
-		const keysToRemove: string[] = [];
-
-		// Find all field cache entries that start with the array path
-		for (const key of this._fieldCache.keys()) {
-			if (key.startsWith(arrayPath)) {
-				keysToRemove.push(key);
-			}
-		}
-
-		// Remove the stale entries
-		for (const key of keysToRemove) {
-			this._fieldCache.delete(key);
-		}
+		clearStaleFieldCacheEntries(this._fieldCache, arrayPath);
+		clearStalePathCacheEntries(this._pathCache, arrayPath);
 	}
 
 	/**
@@ -862,6 +737,12 @@ export class RuneForm<T extends Record<string, unknown>> {
 		this._proxyCache = new WeakMap<object, object>();
 		this._methodCache = new WeakMap<object, SvelteMap<string, (...args: unknown[]) => unknown>>();
 
+		// Clear pending validation timeout
+		if (this._validationTimeoutId !== undefined) {
+			clearTimeout(this._validationTimeoutId);
+			this._validationTimeoutId = undefined;
+		}
+
 		// Reset reactive state to prevent memory leaks
 		this._data = {} as T;
 		this.errors = {};
@@ -876,7 +757,3 @@ export class RuneForm<T extends Record<string, unknown>> {
 		this._validPaths.clear();
 	}
 }
-
-type ArrayPaths<T> = {
-	[K in Paths<T>]: PathValue<T, K> extends Array<unknown> ? K : never;
-}[Paths<T>];

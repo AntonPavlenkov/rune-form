@@ -11,7 +11,7 @@ A powerful, reactive form library for Svelte 5 using runes and Zod validation wi
 - **🌳 Nested Objects**: Deep support for complex nested form structures
 - **📋 Dynamic Arrays**: Advanced array operations with automatic state synchronization
 - **🧠 Memory Management**: Automatic resource disposal with `Symbol.dispose`
-- **🎨 Form Enhancement**: Built-in form submission handling
+
 - **🔧 Array Manipulation**: Rich set of array operations (push, splice, swap, etc.)
 - **💾 Caching**: Intelligent caching with memory leak prevention
 
@@ -42,7 +42,7 @@ npm install rune-form
 	};
 </script>
 
-<form use:form.enhance={{ onSubmit: handleSubmit }}>
+<form on:submit|preventDefault={handleSubmit}>
 	<div>
 		<input type="text" bind:value={form.data.name} placeholder="Name" />
 		{#if form.touched.name && form.errors.name}
@@ -332,8 +332,7 @@ setCustomErrors(path: Paths<T>, messages: string[]): void
 dispose(): void
 [Symbol.dispose](): void
 
-// Form enhancement
-get enhance(): (node: HTMLFormElement) => { destroy(): void }
+
 ```
 
 #### Properties
@@ -403,7 +402,7 @@ interface FieldObject {
 	};
 </script>
 
-<form use:form.enhance={{ onSubmit: handleSubmit }} class="space-y-6">
+<form on:submit|preventDefault={handleSubmit} class="space-y-6">
 	<!-- Basic fields -->
 	<div>
 		<label for="name">Name</label>

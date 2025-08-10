@@ -43,9 +43,22 @@ export type PathValue<T, P extends string> = P extends `${infer K}.${infer Rest}
 				: never
 			: never;
 
+export type ArrayPaths<T> = {
+	[K in Paths<T>]: PathValue<T, K> extends Array<unknown> ? K : never;
+}[Paths<T>];
+
 export type RuneFormType<T extends Record<string, unknown>> = RuneForm<T>;
 export type RuneFormField<T extends Record<string, unknown>> = Paths<T>;
 export type RuneFormFieldValue<
 	T extends Record<string, unknown>,
 	K extends RuneFormField<T>
 > = PathValue<T, K>;
+
+// Custom validation function types
+export type ValidationFunction<T> = (
+	value: T,
+	allData?: Record<string, unknown>
+) => string[] | Promise<string[]>;
+export type CustomValidator<T> = {
+	[K in keyof T]?: ValidationFunction<T[K]>;
+};

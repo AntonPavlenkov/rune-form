@@ -10,6 +10,7 @@ import {
 	type ZodTypeAny
 } from 'zod';
 import type { Validator } from './RuneForm.svelte.js';
+import { flattenZodIssues } from './helpers.js';
 
 // --- Caching for performance ---
 const shapeCache = new WeakMap<ZodObject<Record<string, ZodTypeAny>>, Record<string, ZodTypeAny>>();
@@ -111,16 +112,6 @@ export function getZodInputConstraints(schema: ZodTypeAny): Record<string, unkno
 	return constraints;
 }
 
-function flattenZodIssues(issues: unknown[]): Record<string, string[]> {
-	const errors: Record<string, string[]> = {};
-	for (const issue of issues as { path: string[]; message: string }[]) {
-		const path = issue.path.join('.');
-		if (!errors[path]) errors[path] = [];
-		errors[path].push(issue.message);
-	}
-	return errors;
-}
-
 export function getAllPaths(schema: ZodTypeAny, base = '', depth = 0, maxDepth = 8): string[] {
 	schema = unwrapSchema(schema);
 	if (!schema || typeof schema !== 'object') return [];
@@ -165,9 +156,7 @@ export function batchValidate(schema: ZodTypeAny, data: unknown) {
 }
 
 // --- Metadata helper (from .describe()) ---
-export function getFieldDescription(schema: ZodTypeAny): string | undefined {
-	return (schema as unknown as { _def: { description: string } })._def?.description;
-}
+// getFieldDescription is now imported from helpers.js
 
 export function createZodValidator<S extends ZodTypeAny>(schema: S): Validator<z.infer<S>> {
 	return {

@@ -90,9 +90,101 @@
 	</div>
 
 	<div class="mb-8 rounded-lg bg-gray-50 p-6">
-		<h3 class="mb-4 text-xl font-semibold">Basic Usage</h3>
-		<pre class="overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code
-				>{`import { RuneForm } from 'rune-form';
+		<h2 class="mb-4 text-xl font-semibold">Custom Validation Example</h2>
+		<p class="mb-4 text-gray-600">
+			This example shows how to use RuneForm with custom validation functions instead of Zod
+			schemas.
+		</p>
+
+		<div class="mb-6 rounded-lg bg-gray-50 p-4">
+			<pre class="text-sm text-gray-800"><code
+					>{`import { RuneForm } from '$lib';
+
+// Define custom validation functions
+const customValidator = {
+  name: (value: string) => {
+    if (!value || value.length < 2) {
+      return ['Name must be at least 2 characters long'];
+    }
+    return [];
+  },
+  email: (value: string) => {
+    if (!value || !value.includes('@')) {
+      return ['Email must be valid'];
+    }
+    return [];
+  },
+  age: (value: number) => {
+    if (value < 18) {
+      return ['Must be at least 18 years old'];
+    }
+    return [];
+  }
+};
+
+// Create form with custom validator
+const form = RuneForm.fromCustom(customValidator, {
+  name: 'John',
+  email: 'john@example.com',
+  age: 25
+});`}</code
+				></pre>
+		</div>
+
+		<div class="rounded-lg border bg-white p-6 shadow-sm">
+			<h3 class="mb-4 text-lg font-medium">Custom Validation Form</h3>
+
+			<div class="space-y-4">
+				<div>
+					<label for="custom-name" class="mb-1 block text-sm font-medium text-gray-700">
+						Name
+					</label>
+					<input
+						id="custom-name"
+						type="text"
+						placeholder="Enter your name"
+						class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
+					/>
+				</div>
+
+				<div>
+					<label for="custom-email" class="mb-1 block text-sm font-medium text-gray-700">
+						Email
+					</label>
+					<input
+						id="custom-email"
+						type="email"
+						placeholder="Enter your email"
+						class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
+					/>
+				</div>
+
+				<div>
+					<label for="custom-age" class="mb-1 block text-sm font-medium text-gray-700"> Age </label>
+					<input
+						id="custom-age"
+						type="number"
+						placeholder="Enter your age"
+						class="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
+					/>
+				</div>
+			</div>
+
+			<div class="mt-6">
+				<button
+					type="button"
+					class="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
+				>
+					Validate Form
+				</button>
+			</div>
+		</div>
+
+		<h2 class="mt-8 mb-4 text-xl font-semibold">Zod Schema Example</h2>
+
+		<div class="mb-8 rounded-lg bg-gray-50 p-6">
+			<pre class="overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code
+					>{`import { RuneForm } from 'rune-form';
 import { z } from 'zod';
 
 const schema = z.object({
@@ -107,13 +199,13 @@ const form = RuneForm.fromSchema(schema);
 {#if form.touched.name && form.errors.name}
   <span class="error">{form.errors.name[0]}</span>
 {/if}`}</code
-			></pre>
-	</div>
+				></pre>
+		</div>
 
-	<div class="mb-8 rounded-lg bg-gray-50 p-6">
-		<h3 class="mb-4 text-xl font-semibold">Advanced Array Operations</h3>
-		<pre class="overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code
-				>{`// Add items
+		<div class="mb-8 rounded-lg bg-gray-50 p-6">
+			<h3 class="mb-4 text-xl font-semibold">Advanced Array Operations</h3>
+			<pre class="overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code
+					>{`// Add items
 form.push('items', newItem);
 
 // Insert at position
@@ -128,13 +220,13 @@ form.swap('items', index1, index2);
 // Direct mutations (also tracked)
 form.data.items.push(newItem);
 form.data.items.splice(index, 1);`}</code
-			></pre>
-	</div>
+				></pre>
+		</div>
 
-	<div class="mb-8 rounded-lg bg-gray-50 p-6">
-		<h3 class="mb-4 text-xl font-semibold">Memory Management</h3>
-		<pre class="overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code
-				>{`// Automatic disposal with Symbol.dispose
+		<div class="mb-8 rounded-lg bg-gray-50 p-6">
+			<h3 class="mb-4 text-xl font-semibold">Memory Management</h3>
+			<pre class="overflow-x-auto rounded bg-gray-100 p-4 text-sm"><code
+					>{`// Automatic disposal with Symbol.dispose
 {
   const form = RuneForm.fromSchema(schema);
   // Use form...
@@ -145,7 +237,8 @@ form.data.items.splice(index, 1);`}</code
 const form = RuneForm.fromSchema(schema);
 // Use form...
 form.dispose(); // Clean up resources`}</code
-			></pre>
+				></pre>
+		</div>
 	</div>
 </section>
 

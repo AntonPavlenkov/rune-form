@@ -83,14 +83,20 @@
 	}
 
 	// Form submission handler
-	const handleSubmit = async (data: any) => {
-		console.log('Form submitted with data:', data);
-		alert('Form submitted successfully! Check console for data.');
-	};
+	const handleSubmit = async (event: SubmitEvent) => {
+		event.preventDefault();
 
-	const handleError = (errors: Record<string, string[]>) => {
-		console.log('Form validation errors:', errors);
-		alert('Form has validation errors. Check console for details.');
+		// Validate form before submission
+		await form.validateSchema();
+
+		if (!form.isValid) {
+			// Mark all fields as touched to show validation errors
+			form.markAllTouched();
+			return;
+		}
+
+		console.log('Form submitted with data:', form.data);
+		alert('Form submitted successfully! Check console for data.');
 	};
 
 	// Array operation handlers
@@ -144,7 +150,7 @@
 </script>
 
 <form
-	use:form.enhance={{ onSubmit: handleSubmit, onError: handleError }}
+	onsubmit={handleSubmit}
 	class="mx-auto max-w-4xl space-y-8 rounded-xl border border-emerald-100 bg-white/90 p-8 shadow-lg"
 >
 	<div class="flex items-center justify-between">

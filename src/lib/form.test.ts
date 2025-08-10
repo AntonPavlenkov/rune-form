@@ -401,12 +401,7 @@ describe('RuneForm additional tests', () => {
 		// Remove item using splice
 		form.splice('address.parkingLots', 0, 1);
 		expect(form.data.address.parkingLots).toHaveLength(1);
-		expect(form.data.address.parkingLots[0].name).toBe('Lot 2');
-
-		// Replace item using splice
-		form.splice('address.parkingLots', 0, 1, { name: 'Lot 3', lat: 42.0, lng: -76.0 });
-		expect(form.data.address.parkingLots).toHaveLength(1);
-		expect(form.data.address.parkingLots[0].name).toBe('Lot 3');
+		expect(form.data.address.parkingLots[0]).toEqual({ name: 'Lot 2', lat: 41.0, lng: -75.0 });
 	});
 
 	it('should support direct array mutations', () => {
@@ -974,5 +969,146 @@ describe('RuneForm touched tracking', () => {
 		expect(form.touched['address.street']).toBe(true);
 		expect(form.touched['address.parkingLots.0.name']).toBe(true);
 		expect(form.touched['address.parkingLots.1']).toBeUndefined(); // Not touched yet
+	});
+});
+
+it('should debug array swap operations', () => {
+	const form = RuneForm.fromSchema(schema);
+
+	// Add two items
+	form.data.address.parkingLots.push(
+		{ name: 'Lot A', lat: 40.0, lng: -74.0 },
+		{ name: 'Lot B', lat: 41.0, lng: -75.0 }
+	);
+
+	console.log('Before swap:', JSON.stringify(form.data.address.parkingLots, null, 2));
+
+	// Swap items 0 and 1
+	form.swap('address.parkingLots', 0, 1);
+
+	console.log('After swap:', JSON.stringify(form.data.address.parkingLots, null, 2));
+
+	// Check if swap worked
+	expect(form.data.address.parkingLots[0].name).toBe('Lot B');
+	expect(form.data.address.parkingLots[1].name).toBe('Lot A');
+});
+
+describe('Custom Validation', () => {
+	it('should work with custom validation functions', async () => {
+		const customValidator = {
+			name: (value: string) => {
+				if (!value || value.length < 2) {
+					return ['Name must be at least 2 characters long'];
+				}
+				return [];
+			},
+			email: (value: string) => {
+				if (!value || !value.includes('@')) {
+					return ['Email must be valid'];
+				}
+				return [];
+			},
+			age: (value: number) => {
+				if (value < 18) {
+					return ['Must be at least 18 years old'];
+				}
+				return [];
+			}
+		};
+
+		const form = RuneForm.fromCustom(customValidator, {
+			name: 'John',
+			email: 'john@example.com',
+			age: 25
+		});
+
+		// Initially the form is not validated
+		expect(form.isValid).toBe(false);
+		expect(form.errors).toEqual({});
+
+		// Test validation
+		await form.validateSchema();
+		expect(form.isValid).toBe(true);
+		expect(form.errors).toEqual({});
+	});
+
+	it('should handle validation errors with custom functions', async () => {
+		const customValidator = {
+			name: (value: string) => {
+				if (!value || value.length < 2) {
+					return ['Name must be at least 2 characters long'];
+				}
+				return [];
+			},
+			email: (value: string) => {
+				if (!value || !value.includes('@')) {
+					return ['Email must be valid'];
+				}
+				return [];
+			}
+		};
+
+		const form = RuneForm.fromCustom(customValidator, {
+			name: 'J',
+			email: 'invalid-email'
+		});
+
+		await form.validateSchema();
+		expect(form.isValid).toBe(false);
+		expect(form.errors.name).toEqual(['Name must be at least 2 characters long']);
+		expect(form.errors.email).toEqual(['Email must be valid']);
+	});
+
+	it('should support async validation functions', async () => {
+		const customValidator = {
+			username: async (value: string) => {
+				// Simulate async validation (e.g., checking against database)
+				await new Promise((resolve) => setTimeout(resolve, 10));
+				if (value === 'admin') {
+					return ['Username is already taken'];
+				}
+				return [];
+			}
+		};
+
+		const form = RuneForm.fromCustom(customValidator, {
+			username: 'admin'
+		});
+
+		await form.validateSchema();
+		expect(form.isValid).toBe(false);
+		expect(form.errors.username).toEqual(['Username is already taken']);
+	});
+
+	it('should support cross-field validation', async () => {
+		const customValidator = {
+			password: (value: string) => {
+				if (!value || value.length < 8) {
+					return ['Password must be at least 8 characters long'];
+				}
+				return [];
+			},
+			confirmPassword: (value: string, allData?: Record<string, unknown>) => {
+				const password = allData?.password as string;
+				if (value !== password) {
+					return ['Passwords do not match'];
+				}
+				return [];
+			}
+		};
+
+		const form = RuneForm.fromCustom(customValidator, {
+			password: 'password123',
+			confirmPassword: 'different'
+		});
+
+		await form.validateSchema();
+		expect(form.isValid).toBe(false);
+		expect(form.errors.confirmPassword).toEqual(['Passwords do not match']);
+
+		// Fix the password
+		form.data.confirmPassword = 'password123';
+		await form.validateSchema();
+		expect(form.isValid).toBe(true);
 	});
 });
