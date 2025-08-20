@@ -117,19 +117,35 @@ export function syncTouchedStateForArrayRemoval(
 
 	const escapedArrayPath = escapeRegex(arrayPath);
 
-	// Remove touched state for deleted items
-	for (let i = 0; i < deleteCount; i++) {
-		const indexToRemove = startIndex + i;
-		const removePattern = new RegExp(`^${escapedArrayPath}\\.${indexToRemove}(?:\\.|$)`);
-		const keysToRemove = touchedKeys.filter((key) => removePattern.test(key));
+	// Store keys that need to be shifted (those after the deleted range)
+	const keysToShift: string[] = [];
 
-		for (const key of keysToRemove) {
-			delete touched[key];
+	// Process all touched keys
+	for (const key of touchedKeys) {
+		// Extract the index from the key
+		const match = key.match(new RegExp(`^${escapedArrayPath}\\.(\\d+)`));
+		if (match) {
+			const index = parseInt(match[1], 10);
+
+			// If the key is in the deletion range, remove it
+			if (index >= startIndex && index < startIndex + deleteCount) {
+				delete touched[key];
+			}
+			// If the key is after the deletion range, it needs to be shifted
+			else if (index >= startIndex + deleteCount) {
+				keysToShift.push(key);
+			}
 		}
 	}
 
 	// Shift remaining indices down
-	shiftArrayIndicesInTouchedState(touched, touchedKeys, arrayPath, startIndex, -deleteCount);
+	shiftArrayIndicesInTouchedState(
+		touched,
+		keysToShift,
+		arrayPath,
+		startIndex + deleteCount,
+		-deleteCount
+	);
 }
 
 export function syncTouchedStateForArrayInsertion(

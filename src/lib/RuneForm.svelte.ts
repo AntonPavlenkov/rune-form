@@ -518,10 +518,12 @@ export class RuneForm<T extends Record<string, unknown>> {
 
 	swap<K extends ArrayPaths<T>>(path: K, i: number, j: number) {
 		this._executeArrayOperation(path, (arr) => {
-			// First swap the array elements
+			// Swap the array elements
+			// Note: Array swap doesn't trigger the mutating array methods,
+			// so we need to manually sync touched state
 			[arr[i], arr[j]] = [arr[j], arr[i]];
 
-			// Re-enable touched state sync with the helper functions
+			// Manually sync touched state for swap since it's not a mutating array method
 			this._syncTouchedStateForArraySwap(path as string, i, j);
 		});
 	}
@@ -534,21 +536,12 @@ export class RuneForm<T extends Record<string, unknown>> {
 		...items: PathValue<T, `${K}.${number}`>[]
 	) {
 		this._executeArrayOperation(path, (arr) => {
-			// Perform the array operation first
+			// Perform the array operation
+			// The proxy will handle touched state synchronization automatically
 			if (deleteCount !== undefined) {
 				arr.splice(start, deleteCount, ...items);
 			} else {
 				arr.splice(start);
-			}
-
-			// Re-enable touched state sync with the helper functions
-			const actualDeleteCount = deleteCount ?? arr.length - start;
-			const insertCount = items.length;
-			if (actualDeleteCount > 0) {
-				this._syncTouchedStateForArrayRemoval(path as string, start, actualDeleteCount);
-			}
-			if (insertCount > 0) {
-				this._syncTouchedStateForArrayInsertion(path as string, start, insertCount);
 			}
 		});
 	}
