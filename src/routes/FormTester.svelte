@@ -414,6 +414,7 @@
 							placeholder="Latitude"
 							class="input input-sm input-bordered w-full"
 						/>
+						sdfsdfsf
 						{#if form.touched[`address.parkingLots.${i}.lat`] && form.errors[`address.parkingLots.${i}.lat`]}
 							<div class="mt-1 text-xs text-red-600">
 								{form.errors[`address.parkingLots.${i}.lat`][0]}

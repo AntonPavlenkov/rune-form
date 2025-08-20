@@ -1,42 +1,42 @@
-import {
-	z,
-	ZodArray,
-	ZodDefault,
-	ZodNullable,
-	ZodNumber,
-	ZodObject,
-	ZodOptional,
-	ZodUnion,
-	type ZodTypeAny
-} from 'zod';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// This file needs to use 'any' types for Zod v3/v4 compatibility
+
+import { z, type ZodTypeAny } from 'zod';
 import type { Validator } from './RuneForm.svelte.js';
 import { flattenZodIssues } from './helpers.js';
+import {
+	getArrayElement,
+	getDefaultValue,
+	getInnerType,
+	getNumberChecks,
+	getObjectShape,
+	getUnionOptions,
+	isOptionalish,
+	isZodArray,
+	isZodDefault,
+	isZodNumber,
+	isZodObject,
+	isZodUnion,
+	unwrapSchema as unwrapSchemaCompat
+} from './zodCompat.js';
 
 // --- Caching for performance ---
-const shapeCache = new WeakMap<ZodObject<Record<string, ZodTypeAny>>, Record<string, ZodTypeAny>>();
-const elementCache = new WeakMap<ZodArray<ZodTypeAny>, ZodTypeAny>();
+const shapeCache = new WeakMap<any, Record<string, ZodTypeAny>>();
+const elementCache = new WeakMap<any, ZodTypeAny>();
 const unwrappedCache = new WeakMap<ZodTypeAny, ZodTypeAny>();
 const pathsCache = new WeakMap<ZodTypeAny, string[]>();
 
-function getShape(schema: ZodObject<Record<string, ZodTypeAny>>): Record<string, ZodTypeAny> {
+function getShape(schema: any): Record<string, ZodTypeAny> {
 	if (!shapeCache.has(schema)) {
-		let shape: Record<string, ZodTypeAny> = {};
-		if (schema._def && typeof schema._def.shape === 'function') {
-			shape = (schema._def.shape as unknown as () => Record<string, ZodTypeAny>)();
-		} else if (schema._def && schema._def.shape) {
-			shape = schema._def.shape as Record<string, ZodTypeAny>;
-		}
+		const shape = getObjectShape(schema);
 		shapeCache.set(schema, shape);
 	}
 	return shapeCache.get(schema)!;
 }
 
-function getElement(schema: ZodArray<ZodTypeAny>): ZodTypeAny {
+function getElement(schema: any): ZodTypeAny {
 	if (!elementCache.has(schema)) {
-		let element: ZodTypeAny = z.unknown() as ZodTypeAny;
-		if (schema._def && schema._def.element) {
-			element = schema._def.element as ZodTypeAny;
-		}
+		const element = getArrayElement(schema);
 		elementCache.set(schema, element);
 	}
 	return elementCache.get(schema)!;
@@ -44,70 +44,42 @@ function getElement(schema: ZodArray<ZodTypeAny>): ZodTypeAny {
 
 function unwrapSchema(schema: ZodTypeAny): ZodTypeAny {
 	if (unwrappedCache.has(schema)) return unwrappedCache.get(schema)!;
-	let s = schema;
-	while (
-		s.isOptional?.() ||
-		s.isNullable?.() ||
-		s instanceof ZodDefault ||
-		s instanceof ZodOptional ||
-		s instanceof ZodNullable
-	) {
-		s = (s as unknown as { def: { innerType: ZodTypeAny } }).def.innerType;
-	}
-	unwrappedCache.set(schema, s);
-	return s;
+	const unwrapped = unwrapSchemaCompat(schema);
+	unwrappedCache.set(schema, unwrapped);
+	return unwrapped;
 }
 
 export function getZodInputConstraints(schema: ZodTypeAny): Record<string, unknown> {
 	const constraints: Record<string, unknown> = {};
 
-	// -- Helper: unwrap inner schema
-	const unwrap = (s: ZodTypeAny): ZodTypeAny => {
-		while (s instanceof ZodOptional || s instanceof ZodDefault || s instanceof ZodNullable) {
-			s = (s as unknown as { def: { innerType: ZodTypeAny } }).def.innerType;
-		}
-		return s;
-	};
-
-	// -- Helper: check if schema is optional-ish
-	const isOptionalish = (s: ZodTypeAny): boolean => {
-		return s instanceof ZodOptional || s instanceof ZodDefault || s instanceof ZodNullable;
-	};
-
 	// required flag based on original schema
 	constraints.required = !isOptionalish(schema);
 
-	const base = unwrap(schema);
+	const base = unwrapSchemaCompat(schema);
 
-	switch (true) {
-		case base instanceof ZodNumber: {
-			constraints.type = 'number';
+	if (isZodNumber(base)) {
+		constraints.type = 'number';
 
-			for (const check of (base as unknown as { def: { checks: unknown[] } }).def.checks ?? []) {
-				if (check && typeof check === 'object' && 'kind' in check) {
-					switch (check.kind) {
-						case 'min':
-							if ('value' in check) constraints.min = (check as { value: unknown }).value;
-							break;
-						case 'max':
-							if ('value' in check) constraints.max = (check as { value: unknown }).value;
-							break;
-						case 'int':
-							constraints.step = 1;
-							break;
-					}
+		for (const check of getNumberChecks(base)) {
+			if (check && typeof check === 'object' && 'kind' in check) {
+				switch (check.kind) {
+					case 'min':
+						if ('value' in check) constraints.min = (check as { value: unknown }).value;
+						break;
+					case 'max':
+						if ('value' in check) constraints.max = (check as { value: unknown }).value;
+						break;
+					case 'int':
+						constraints.step = 1;
+						break;
 				}
 			}
-			break;
 		}
-
-		case base instanceof ZodArray: {
-			constraints.type = 'array';
-			break;
-		}
-
-		// Optional: Add more cases for boolean, date, enum, etc.
+	} else if (isZodArray(base)) {
+		constraints.type = 'array';
 	}
+
+	// Optional: Add more cases for boolean, date, enum, etc.
 
 	return constraints;
 }
@@ -118,13 +90,13 @@ export function getAllPaths(schema: ZodTypeAny, base = '', depth = 0, maxDepth =
 	if (depth > maxDepth) return [];
 
 	// Handle ZodUnion
-	if (schema instanceof ZodUnion) {
-		const options = (schema as ZodUnion<[ZodTypeAny, ...ZodTypeAny[]]>)._def.options;
+	if (isZodUnion(schema)) {
+		const options = getUnionOptions(schema);
 		const all = options.flatMap((opt) => getAllPaths(opt, base, depth + 1, maxDepth));
 		return [...new Set(all)];
 	}
 
-	if (schema instanceof ZodObject) {
+	if (isZodObject(schema)) {
 		const shape = getShape(schema);
 		const childPaths = Object.entries(shape).flatMap(([key, sub]) =>
 			getAllPaths(sub as ZodTypeAny, base ? `${base}.${key}` : key, depth + 1, maxDepth)
@@ -132,9 +104,9 @@ export function getAllPaths(schema: ZodTypeAny, base = '', depth = 0, maxDepth =
 		return base ? [base, ...childPaths] : childPaths;
 	}
 
-	if (schema instanceof ZodArray) {
+	if (isZodArray(schema)) {
 		const arrayBase = base ? `${base}.0` : '0';
-		const element = getElement(schema as ZodArray<ZodTypeAny>);
+		const element = getElement(schema);
 		const inner = getAllPaths(element as ZodTypeAny, arrayBase, depth + 1, maxDepth);
 		return base ? [base, ...inner] : inner;
 	}
@@ -182,44 +154,32 @@ export function createZodValidator<S extends ZodTypeAny>(schema: S): Validator<z
 		},
 		resolveDefaults(data: Partial<z.infer<S>>): z.infer<S> {
 			const walk = (schema: ZodTypeAny, value: unknown): unknown => {
-				if (schema instanceof ZodDefault) {
-					const innerType = (schema as unknown as { def: { innerType: ZodTypeAny } }).def.innerType;
-					const defaultValue = (schema as unknown as { def: { defaultValue: unknown } }).def
-						.defaultValue;
+				if (isZodDefault(schema)) {
+					const innerType = getInnerType(schema);
+					const defaultValue = getDefaultValue(schema);
 
 					if (value !== undefined) {
 						return walk(innerType, value);
 					}
 
-					// Handle function defaults
-					if (typeof defaultValue === 'function') {
-						const defaultResult = (
-							schema as unknown as { def: { defaultValue: () => unknown } }
-						).def.defaultValue();
-						return walk(innerType, defaultResult);
-					}
-
-					// Handle static defaults
 					return walk(innerType, defaultValue);
 				}
 
-				if (schema instanceof ZodObject) {
+				if (isZodObject(schema)) {
 					const result: Record<string, unknown> = {};
-					for (const key in (schema as unknown as { shape: Record<string, ZodTypeAny> }).shape) {
-						const fieldSchema = (schema as unknown as { shape: Record<string, ZodTypeAny> }).shape[
-							key
-						];
+					const shape = getShape(schema);
+					for (const key in shape) {
+						const fieldSchema = shape[key];
 						const val = (value as Record<string, unknown> | undefined)?.[key];
 						result[key] = walk(fieldSchema, val);
 					}
 					return result;
 				}
 
-				if (schema instanceof ZodArray) {
+				if (isZodArray(schema)) {
 					if (Array.isArray(value)) {
-						return value.map((v) =>
-							walk((schema as unknown as { def: { type: ZodTypeAny } }).def.type, v)
-						);
+						const element = getElement(schema);
+						return value.map((v) => walk(element, v));
 					}
 					return [];
 				}
@@ -234,10 +194,11 @@ export function createZodValidator<S extends ZodTypeAny>(schema: S): Validator<z
 		getInputAttributes(path: string) {
 			let current: ZodTypeAny = schema;
 			for (const key of path.split('.')) {
-				if (current instanceof ZodObject) {
-					current = (current as unknown as { shape: Record<string, ZodTypeAny> }).shape[key];
-				} else if (current instanceof ZodArray && /^\d+$/.test(key)) {
-					current = (current as unknown as { def: { type: ZodTypeAny } }).def.type;
+				if (isZodObject(current)) {
+					const shape = getShape(current);
+					current = shape[key];
+				} else if (isZodArray(current) && /^\d+$/.test(key)) {
+					current = getElement(current);
 				} else {
 					return {};
 				}

@@ -7,11 +7,9 @@ import {
 	debounceValidation,
 	ensureArrayElementsReactive,
 	evictOldestFromMap,
-	getTouchedKeysForArray,
 	handleArrayMethodTouchedState,
 	MUTATING_ARRAY_METHODS,
 	parsePath,
-	shiftArrayIndicesInTouchedState,
 	syncTouchedStateForArrayInsertion,
 	syncTouchedStateForArrayRemoval,
 	syncTouchedStateForArraySwap
@@ -639,21 +637,6 @@ export class RuneForm<T extends Record<string, unknown>> {
 			this.createReactiveData,
 			this.createReactiveArray
 		);
-	}
-
-	// Helper method to get all touched keys for a specific array
-	private _getTouchedKeysForArray(arrayPath: string): string[] {
-		return getTouchedKeysForArray(this.touched, arrayPath);
-	}
-
-	// Helper method to shift array indices in touched state
-	private _shiftArrayIndices(
-		touchedKeys: string[],
-		arrayPath: string,
-		startIndex: number,
-		shiftAmount: number
-	) {
-		shiftArrayIndicesInTouchedState(this.touched, touchedKeys, arrayPath, startIndex, shiftAmount);
 	}
 
 	// Helper method to handle array method specific touched state syncing

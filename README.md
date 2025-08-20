@@ -21,6 +21,20 @@ A powerful, reactive form library for Svelte 5 using runes and Zod validation wi
 npm install rune-form
 ```
 
+### Zod Version Compatibility
+
+RuneForm supports both **Zod v3** and **Zod v4**. The library automatically adapts to the version you have installed in your project:
+
+```bash
+# For Zod v3
+npm install zod@^3.0.0
+
+# For Zod v4
+npm install zod@^4.0.0
+```
+
+Both versions are fully supported with complete feature parity. The library uses an internal compatibility layer to handle differences between Zod versions seamlessly.
+
 ## 🚀 Quick Start
 
 ```svelte
