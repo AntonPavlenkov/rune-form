@@ -18,7 +18,7 @@ export function evictOldestFromMap<K>(map: EvictableMap<K>): void {
 }
 
 // Array utility functions
-export function isArrayIndex(str: string): boolean {
+function isArrayIndex(str: string): boolean {
 	return /^\d+$/.test(str);
 }
 
@@ -28,44 +28,7 @@ export function parsePath(path: string): (string | number)[] {
 		.map((segment) => (isArrayIndex(segment) ? parseInt(segment, 10) : segment));
 }
 
-export function shiftArrayIndices(
-	touchedKeys: string[],
-	arrayPath: string,
-	startIndex: number,
-	shiftAmount: number
-): string[] {
-	return touchedKeys
-		.map((key) => {
-			if (!key.startsWith(arrayPath + '.')) return key;
-
-			const parts = key.split('.');
-			const indexPart = parts[1];
-
-			if (!isArrayIndex(indexPart)) return key;
-
-			const index = parseInt(indexPart, 10);
-			// For removal operations, we need to shift all indices > startIndex
-			// For insertion operations, we shift all indices >= startIndex
-			if (shiftAmount < 0 && index > startIndex) {
-				const newIndex = index + shiftAmount;
-				if (newIndex >= 0) {
-					parts[1] = newIndex.toString();
-					return parts.join('.');
-				}
-			} else if (shiftAmount > 0 && index >= startIndex) {
-				const newIndex = index + shiftAmount;
-				parts[1] = newIndex.toString();
-				return parts.join('.');
-			}
-			return key;
-		})
-		.filter((key) => key !== arrayPath + '.'); // Remove the array path itself
-}
-
-export function getTouchedKeysForArray(
-	touched: Record<string, boolean>,
-	arrayPath: string
-): string[] {
+function getTouchedKeysForArray(touched: Record<string, boolean>, arrayPath: string): string[] {
 	return Object.keys(touched).filter((key) => key.startsWith(arrayPath + '.') && key !== arrayPath);
 }
 
@@ -162,7 +125,7 @@ export function syncTouchedStateForArrayInsertion(
 }
 
 // Helper function to shift array indices in touched state
-export function shiftArrayIndicesInTouchedState(
+function shiftArrayIndicesInTouchedState(
 	touched: Record<string, boolean>,
 	touchedKeys: string[],
 	arrayPath: string,
@@ -245,112 +208,24 @@ export function clearStaleFieldCacheEntries<K>(
 	}
 }
 
-// Path compilation utilities
-export interface CompiledPath {
-	keys: (string | number)[];
-	isArrayIndex: boolean[];
-	get: (obj: Record<string, unknown>) => unknown;
-	set: (obj: Record<string, unknown>, value: unknown) => void;
-}
+export function clearStalePathCacheEntries<K>(pathCache: Map<string, K>, arrayPath: string): void {
+	const keysToRemove: string[] = [];
 
-export function compilePath(path: string): CompiledPath {
-	const parsed = parsePath(path);
-	const keys = parsed;
-	const isArrayIndex = parsed.map((segment) => typeof segment === 'number');
-
-	const get = (obj: Record<string, unknown>): unknown => {
-		let current: unknown = obj;
-		for (let i = 0; i < keys.length; i++) {
-			if (current == null || typeof current !== 'object') return undefined;
-			current = (current as Record<string, unknown>)[keys[i] as string | number];
-		}
-		return current;
-	};
-
-	const set = (obj: Record<string, unknown>, value: unknown): void => {
-		let current: unknown = obj;
-		for (let i = 0; i < keys.length - 1; i++) {
-			const key = keys[i];
-			const isNextIndex = isArrayIndex[i + 1];
-
-			if (
-				typeof current !== 'object' ||
-				current === null ||
-				!(key in (current as Record<string, unknown>)) ||
-				typeof (current as Record<string, unknown>)[key as string | number] !== 'object'
-			) {
-				(current as Record<string, unknown>)[key as string | number] = isNextIndex ? [] : {};
-			}
-			current = (current as Record<string, unknown>)[key as string | number];
-		}
-		const lastKey = keys[keys.length - 1];
-		if (typeof current === 'object' && current !== null) {
-			(current as Record<string, unknown>)[lastKey as string | number] = value;
-		}
-	};
-
-	return { keys, isArrayIndex, get, set };
-}
-
-// Array method handling utilities
-export interface ArrayMethodHandler {
-	handleSplice: (
-		args: [number, number?, ...unknown[]],
-		target: unknown[]
-	) => {
-		start: number;
-		deleteCount: number;
-		insertCount: number;
-	};
-	handlePop: (currentLength: number, previousLength?: number) => number | undefined;
-	handleShift: () => void;
-	handleUnshift: (args: unknown[]) => number;
-}
-
-export const arrayMethodHandler: ArrayMethodHandler = {
-	handleSplice(args, target) {
-		const [start, deleteCount = 0, ...insertItems] = args;
-		const actualDeleteCount = deleteCount ?? target.length - start;
-		const insertCount = insertItems.length;
-		return { start, deleteCount: actualDeleteCount, insertCount };
-	},
-	handlePop(currentLength, previousLength) {
-		const lastIndexBeforePop = (previousLength ?? currentLength + 1) - 1;
-		return lastIndexBeforePop >= 0 ? lastIndexBeforePop : undefined;
-	},
-	handleShift() {
-		// No additional logic needed for shift
-	},
-	handleUnshift(args) {
-		return args.length;
-	}
-};
-
-// Zod utility functions
-export function flattenZodIssues(issues: unknown[]): Record<string, string[]> {
-	const flattened: Record<string, string[]> = {};
-
-	for (const issue of issues) {
-		if (issue && typeof issue === 'object' && 'path' in issue && 'message' in issue) {
-			const path = (issue as { path: unknown[] }).path;
-			const message = (issue as { message: string }).message;
-
-			if (Array.isArray(path)) {
-				const key = path.map((p) => String(p)).join('.');
-				if (!flattened[key]) flattened[key] = [];
-				flattened[key].push(message);
-			}
+	// Find all path cache entries that start with the array path
+	// We need to clear:
+	// 1. Individual array element paths (e.g., address.parkingLots.0, address.parkingLots.1)
+	// 2. Field paths within array elements (e.g., address.parkingLots.0.name)
+	// BUT preserve the array path itself (e.g., address.parkingLots)
+	for (const key of pathCache.keys()) {
+		if (key.startsWith(arrayPath + '.') && key !== arrayPath) {
+			keysToRemove.push(key);
 		}
 	}
 
-	return flattened;
-}
-
-export function getFieldDescription(schema: unknown): string | undefined {
-	if (schema && typeof schema === 'object' && 'description' in schema) {
-		return (schema as { description: string }).description;
+	// Remove the stale entries
+	for (const key of keysToRemove) {
+		pathCache.delete(key);
 	}
-	return undefined;
 }
 
 // Array method utilities
@@ -364,20 +239,6 @@ export const MUTATING_ARRAY_METHODS = new Set([
 	'sort',
 	'fill'
 ]);
-
-export function isMutatingArrayMethod(methodName: string): boolean {
-	return MUTATING_ARRAY_METHODS.has(methodName);
-}
-
-// Path validation utilities
-export function isValidPath(path: string): boolean {
-	return path.length > 0 && !path.startsWith('.') && !path.endsWith('.');
-}
-
-export function normalizeArrayPath(path: string): string {
-	// Convert array[0] syntax to array.0 syntax
-	return path.replace(/\[(\d+)\]/g, '.$1');
-}
 
 // Array method touched state handling utilities
 export function handleArrayMethodTouchedState(
@@ -414,64 +275,22 @@ export function handleArrayMethodTouchedState(
 	}
 }
 
-// Array element reactivity utilities
-export function ensureArrayElementsReactive<T extends Record<string, unknown>>(
-	array: unknown[],
-	arrayPath: string,
-	createReactiveData: (data: T, parentPath: string) => T,
-	createReactiveArray: (array: unknown[], parentPath: string) => unknown[]
-): void {
-	// Check each array element and ensure it's reactive
-	for (let i = 0; i < array.length; i++) {
-		const element = array[i];
-		if (element && typeof element === 'object' && !Array.isArray(element)) {
-			const elementPath = `${arrayPath}.${i}`;
-			// Always create a reactive proxy for the element to ensure reactivity
-			const reactiveElement = createReactiveData(element as T, elementPath);
-			// Replace the element in the array
-			array[i] = reactiveElement;
-		} else if (Array.isArray(element)) {
-			const elementPath = `${arrayPath}.${i}`;
-			// Always create a reactive array for the nested array to ensure reactivity
-			const reactiveArray = createReactiveArray(element, elementPath);
-			// Replace the element in the array
-			array[i] = reactiveArray;
-		}
-	}
-}
+// Zod utility functions (used by zodAdapter.ts)
+export function flattenZodIssues(issues: unknown[]): Record<string, string[]> {
+	const flattened: Record<string, string[]> = {};
 
-// Cache management utilities
-export function clearStalePathCacheEntries<K>(pathCache: Map<string, K>, arrayPath: string): void {
-	const keysToRemove: string[] = [];
+	for (const issue of issues) {
+		if (issue && typeof issue === 'object' && 'path' in issue && 'message' in issue) {
+			const path = (issue as { path: unknown[] }).path;
+			const message = (issue as { message: string }).message;
 
-	// Find all path cache entries that start with the array path
-	// We need to clear:
-	// 1. Individual array element paths (e.g., address.parkingLots.0, address.parkingLots.1)
-	// 2. Field paths within array elements (e.g., address.parkingLots.0.name)
-	// BUT preserve the array path itself (e.g., address.parkingLots)
-	for (const key of pathCache.keys()) {
-		if (key.startsWith(arrayPath + '.') && key !== arrayPath) {
-			keysToRemove.push(key);
+			if (Array.isArray(path)) {
+				const key = path.map((p) => String(p)).join('.');
+				if (!flattened[key]) flattened[key] = [];
+				flattened[key].push(message);
+			}
 		}
 	}
 
-	// Remove the stale entries
-	for (const key of keysToRemove) {
-		pathCache.delete(key);
-	}
-}
-
-// Validation utilities
-export function debounceValidation(
-	callback: () => void,
-	delay: number,
-	timeoutIdRef: { current: number | undefined }
-): void {
-	if (timeoutIdRef.current !== undefined) {
-		clearTimeout(timeoutIdRef.current);
-	}
-	timeoutIdRef.current = setTimeout(() => {
-		callback();
-		timeoutIdRef.current = undefined;
-	}, delay);
+	return flattened;
 }
