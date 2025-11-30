@@ -7,6 +7,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 [![Svelte 5](https://img.shields.io/badge/Svelte-5.0+-orange.svg)](https://svelte.dev/)
 [![Zod Compatible](https://img.shields.io/badge/Zod-v3%20%7C%20v4-green.svg)](https://zod.dev/)
+[![Valibot Compatible](https://img.shields.io/badge/Valibot-v1-green.svg)](https://valibot.dev/)
 
 **The most powerful reactive form library for Svelte 5**
 
@@ -28,6 +29,7 @@ RuneForm is a next-generation form library designed specifically for Svelte 5's 
 - **Memory Efficient**: Built-in memory management and resource disposal
 - **Performance Optimized**: Intelligent caching, debounced validation, minimal re-renders
 - **Developer Friendly**: Intuitive API that feels natural to use
+- **Validation Agnostic**: Works with Zod, Valibot, or custom validators
 
 ## 🚀 Features
 
@@ -38,7 +40,7 @@ RuneForm is a next-generation form library designed specifically for Svelte 5's 
 ### Core Features
 
 - 🎯 **Svelte 5 Runes** - Built with latest runes for optimal reactivity
-- 🔒 **Type-Safe Validation** - Zod schemas with full TypeScript support
+- 🔒 **Type-Safe Validation** - Zod, Valibot, or custom validators
 - ⚡ **Auto Touched Tracking** - Automatic field modification detection
 - 🔄 **Real-time Validation** - Debounced validation with error handling
 - 🌳 **Deep Nesting** - Full support for complex nested structures
@@ -69,7 +71,8 @@ npm install rune-form
 ### Requirements
 
 - **Svelte**: ^5.0.0
-- **Zod**: ^3.0.0 or ^4.0.0 (optional, for schema validation)
+- **Zod**: ^3.0.0 or ^4.0.0 (optional, for Zod validation)
+- **Valibot**: ^1.0.0 (optional, for Valibot validation)
 - **TypeScript**: Recommended for best experience
 
 ## 🎓 Quick Start
@@ -78,7 +81,7 @@ npm install rune-form
 
 ```svelte
 <script lang="ts">
-	import { RuneForm } from 'rune-form';
+	import { createForm } from 'rune-form/zodAdapter';
 	import { z } from 'zod';
 
 	// Define your schema
@@ -89,7 +92,7 @@ npm install rune-form
 	});
 
 	// Create form instance
-	const form = RuneForm.fromSchema(schema);
+	const form = createForm(schema);
 
 	// Handle form submission
 	async function handleSubmit() {
@@ -135,10 +138,12 @@ npm install rune-form
 
 ### Form Creation
 
-#### With Zod Schema (Recommended)
+RuneForm supports multiple validation libraries through dedicated adapters:
+
+#### With Zod (Recommended)
 
 ```typescript
-import { RuneForm } from 'rune-form';
+import { createForm } from 'rune-form/zodAdapter';
 import { z } from 'zod';
 
 const schema = z.object({
@@ -150,20 +155,34 @@ const schema = z.object({
 	})
 });
 
-// Create with schema
-const form = RuneForm.fromSchema(schema);
+// Create form
+const form = createForm(schema);
 
 // With initial data
-const form = RuneForm.fromSchema(schema, {
+const form = createForm(schema, {
 	name: 'John Doe',
 	email: 'john@example.com'
 });
 ```
 
+#### With Valibot
+
+```typescript
+import { createForm } from 'rune-form/valibotAdapter';
+import * as v from 'valibot';
+
+const schema = v.object({
+	name: v.pipe(v.string(), v.minLength(2)),
+	email: v.pipe(v.string(), v.email())
+});
+
+const form = createForm(schema);
+```
+
 #### With Custom Validators
 
 ```typescript
-import { RuneForm, createCustomValidator } from 'rune-form';
+import { createForm } from 'rune-form';
 
 const customValidators = {
 	username: (value) => {
@@ -182,7 +201,26 @@ const customValidators = {
 	}
 };
 
-const form = new RuneForm(createCustomValidator(customValidators), { username: '', email: '' });
+const form = createForm(customValidators, { username: '', email: '' });
+```
+
+#### Advanced: Using RuneForm Directly
+
+For maximum control, you can create a `RuneForm` instance directly with any validator:
+
+```typescript
+import { RuneForm, createCustomValidator } from 'rune-form';
+import { createZodValidator } from 'rune-form/zodAdapter';
+import { createValibotValidator } from 'rune-form/valibotAdapter';
+
+// With a custom validator
+const form = new RuneForm(createCustomValidator(validators), initialData);
+
+// With Zod validator
+const form = new RuneForm(createZodValidator(zodSchema), initialData);
+
+// With Valibot validator
+const form = new RuneForm(createValibotValidator(valibotSchema), initialData);
 ```
 
 ### Automatic Touched State Tracking
@@ -191,7 +229,9 @@ RuneForm automatically tracks which fields have been modified. No manual `markTo
 
 ```svelte
 <script>
-	const form = RuneForm.fromSchema(schema);
+	import { createForm } from 'rune-form/zodAdapter';
+
+	const form = createForm(schema);
 </script>
 
 <!-- Touched state is automatically set when user modifies the field -->
@@ -252,6 +292,9 @@ RuneForm provides powerful array manipulation with automatic state synchronizati
 
 ```svelte
 <script>
+	import { createForm } from 'rune-form/zodAdapter';
+	import { z } from 'zod';
+
 	const schema = z.object({
 		todos: z.array(
 			z.object({
@@ -261,7 +304,7 @@ RuneForm provides powerful array manipulation with automatic state synchronizati
 		)
 	});
 
-	const form = RuneForm.fromSchema(schema, {
+	const form = createForm(schema, {
 		todos: [{ text: 'First task', completed: false }]
 	});
 
@@ -298,7 +341,6 @@ RuneForm provides powerful array manipulation with automatic state synchronizati
 ```typescript
 // Add items to the end
 form.push('items', newItem);
-form.push('nested.array', item1, item2, item3);
 
 // Remove items
 form.splice('items', startIndex, deleteCount);
@@ -326,7 +368,7 @@ Validation runs automatically with debouncing (100ms default):
 
 ```svelte
 <script>
-	const form = RuneForm.fromSchema(schema);
+	const form = createForm(schema);
 	// Validation happens automatically as user types
 </script>
 
@@ -377,7 +419,7 @@ RuneForm automatically manages memory to prevent leaks:
 <script>
 	import { onDestroy } from 'svelte';
 
-	const form = RuneForm.fromSchema(schema);
+	const form = createForm(schema);
 
 	// Manual disposal (optional - happens automatically)
 	onDestroy(() => {
@@ -391,7 +433,7 @@ RuneForm automatically manages memory to prevent leaks:
 ```typescript
 // Automatic disposal in using blocks (TC39 proposal)
 {
-	using form = RuneForm.fromSchema(schema);
+	using form = createForm(schema);
 	// Form is automatically disposed when leaving scope
 }
 ```
@@ -402,7 +444,7 @@ RuneForm automatically manages memory to prevent leaks:
 
 ```svelte
 <script lang="ts">
-	import { RuneForm } from 'rune-form';
+	import { createForm } from 'rune-form/zodAdapter';
 	import { z } from 'zod';
 
 	const schema = z.object({
@@ -429,7 +471,7 @@ RuneForm automatically manages memory to prevent leaks:
 		})
 	});
 
-	const form = RuneForm.fromSchema(schema);
+	const form = createForm(schema);
 </script>
 
 <!-- Deep nesting with automatic tracking -->
@@ -501,6 +543,43 @@ RuneForm is designed for maximum performance:
 
 ## 🔧 API Reference
 
+### Imports
+
+```typescript
+// Main exports (custom validators)
+import { RuneForm, createForm, createCustomValidator, type Validator } from 'rune-form';
+
+// Zod adapter
+import { createForm, createZodValidator } from 'rune-form/zodAdapter';
+
+// Valibot adapter
+import { createForm, createValibotValidator } from 'rune-form/valibotAdapter';
+```
+
+### createForm Functions
+
+Each adapter exports a `createForm` function with the same signature pattern:
+
+```typescript
+// Zod
+function createForm<S extends ZodTypeAny>(
+	schema: S,
+	initialData?: Partial<z.infer<S>>
+): RuneForm<z.infer<S>>;
+
+// Valibot
+function createForm<S extends BaseSchema>(
+	schema: S,
+	initialData?: Partial<InferOutput<S>>
+): RuneForm<InferOutput<S>>;
+
+// Custom
+function createForm<T extends Record<string, unknown>>(
+	validator: CustomValidator<T>,
+	initialData?: Partial<T>
+): RuneForm<T>;
+```
+
 ### RuneForm Class
 
 ```typescript
@@ -515,17 +594,11 @@ class RuneForm<T extends Record<string, unknown>> {
 	// Constructor
 	constructor(validator: Validator<T>, initialData?: Partial<T>);
 
-	// Static factory
-	static fromSchema<S extends ZodObject>(
-		schema: S,
-		initialData?: Partial<z.infer<S>>
-	): RuneForm<z.infer<S>>;
-
 	// Field access
 	getField<K extends Paths<T>>(path: K): FieldObject;
 
 	// Array operations
-	push<K extends ArrayPaths<T>>(path: K, ...values: PathValue<T, `${K}.${number}`>[]): void;
+	push<K extends ArrayPaths<T>>(path: K, value: PathValue<T, `${K}.${number}`>): void;
 	splice<K extends ArrayPaths<T>>(
 		path: K,
 		start: number,
@@ -578,6 +651,16 @@ interface Validator<T> {
 }
 ```
 
+### CustomValidator Type
+
+```typescript
+type ValidationFunction<T> = (value: T, allData?: Record<string, unknown>) => string[] | Promise<string[]>;
+
+type CustomValidator<T> = {
+	[K in keyof T]?: ValidationFunction<T[K]>;
+};
+```
+
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](https://github.com/AntonPavlenkov/rune-form/blob/main/CONTRIBUTING.md) for details.
@@ -589,7 +672,7 @@ MIT © [Anton Pavlenkov](https://github.com/AntonPavlenkov)
 ## 🙏 Acknowledgments
 
 - Built for [Svelte 5](https://svelte.dev/)
-- Validation powered by [Zod](https://zod.dev/)
+- Validation powered by [Zod](https://zod.dev/) and [Valibot](https://valibot.dev/)
 - Inspired by modern form libraries
 
 ## 📚 Resources
