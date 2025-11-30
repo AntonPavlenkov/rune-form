@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { RuneForm } from '$lib/RuneForm.svelte';
+	import { RuneForm } from '$lib/RuneForm.svelte.js';
 	import { z } from 'zod';
 
 	const formSchema = z.object({
